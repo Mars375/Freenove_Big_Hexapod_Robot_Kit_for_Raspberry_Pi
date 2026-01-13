@@ -1,293 +1,310 @@
-"""PCA9685 servo controller implementation"""
-from typing import Optional, List, Tuple
-import structlog
-
-try:
-    from adafruit_servokit import ServoKit
-    from adafruit_pca9685 import PCA9685
-    from board import SCL, SDA
-    import busio
-    HARDWARE_AVAILABLE = True
-except ImportError:
-    HARDWARE_AVAILABLE = False
+"""Contrôleur de servos PCA9685 utilisant le HAL."""
+import logging
+from typing import Optional, List, Tuple, Dict, Any
 
 from core.hardware.interfaces.servo_controller import IServoController
-from core.exceptions import HardwareNotAvailableError
-
-logger = structlog.get_logger()
+from core.hardware.drivers.pca9685 import PCA9685
 
 
 class PCA9685ServoController(IServoController):
-    """Real hardware servo controller using PCA9685 PWM driver
+    """Contrôleur de servos utilisant le driver PCA9685 avec HAL.
     
-    Uses Adafruit CircuitPython libraries for reliable I2C communication.
-    Supports 16 channels per PCA9685 chip (extendable to 32 with dual chips).
+    Gère jusqu'à 16 servos par chip PCA9685 via notre architecture HAL.
+    Permet un contrôle par angle (0-180°) ou par largeur d'impulsion (µs).
     
-    Hardware Setup:
-    - PCA9685 connected via I2C (default address 0x40)
-    - Servos connected to channels 0-15 (or 0-31 for dual chip)
-    - 5-6V power supply for servos (separate from Pi)
-    - Common ground between Pi and servo power
+    Architecture:
+        - Utilise le driver PCA9685 qui communique via I2CInterface HAL
+        - Pas de dépendance directe à smbus ou adafruit
+        - Compatible avec l'architecture de découplage hardware
+    
+    Configuration matérielle:
+        - PCA9685 connecté via I2C (adresse par défaut 0x40)
+        - Servos connectés aux canaux 0-15
+        - Alimentation 5-6V pour servos (séparée du Pi)
+        - Masse commune entre Pi et alimentation servos
     """
     
     def __init__(
         self,
-        channels: int = 16,
-        i2c_address: int = 0x40,
-        frequency: int = 50,
+        pca9685: PCA9685,
         min_pulse: int = 500,
         max_pulse: int = 2500
     ):
-        """Initialize PCA9685 servo controller
+        """Initialise le contrôleur de servos.
         
         Args:
-            channels: Number of servo channels (16 or 32)
-            i2c_address: I2C address of PCA9685 (default 0x40)
-            frequency: PWM frequency in Hz (default 50 for servos)
-            min_pulse: Minimum pulse width in microseconds (default 500)
-            max_pulse: Maximum pulse width in microseconds (default 2500)
+            pca9685: Instance du driver PCA9685 configuré
+            min_pulse: Largeur d'impulsion minimale en µs (défaut 500)
+            max_pulse: Largeur d'impulsion maximale en µs (défaut 2500)
         """
-        if not HARDWARE_AVAILABLE:
-            raise HardwareNotAvailableError(
-                "PCA9685 libraries not available. Install: "
-                "pip install adafruit-circuitpython-servokit adafruit-circuitpython-pca9685"
-            )
-        
-        self._channels = channels
-        self._i2c_address = i2c_address
-        self._frequency = frequency
+        self._pca = pca9685
         self._min_pulse = min_pulse
         self._max_pulse = max_pulse
+        self._current_angles: Dict[int, int] = {}
+        self.logger = logging.getLogger(__name__)
         
-        self._kit: Optional[ServoKit] = None
-        self._pca: Optional[PCA9685] = None
-        self._i2c = None
-        self._initialized = False
-        
-        # Track current angles
-        self._current_angles: dict[int, int] = {}
-        
-        logger.info(
-            "pca9685_servo.created",
-            channels=channels,
-            i2c_address=hex(i2c_address),
-            frequency=frequency
+        self.logger.info(
+            f"PCA9685ServoController créé avec pulse range {min_pulse}-{max_pulse}µs"
         )
     
     async def initialize(self) -> None:
-        """Initialize PCA9685 hardware via I2C
-        
-        Raises:
-            HardwareNotAvailableError: If I2C or PCA9685 not accessible
-        """
-        try:
-            logger.info("pca9685_servo.initializing")
-            
-            # Create I2C bus
-            self._i2c = busio.I2C(SCL, SDA)
-            
-            # Initialize PCA9685
-            self._pca = PCA9685(self._i2c, address=self._i2c_address)
-            self._pca.frequency = self._frequency
-            
-            # Initialize ServoKit for easy servo control
-            self._kit = ServoKit(
-                channels=self._channels,
-                address=self._i2c_address,
-                frequency=self._frequency
-            )
-            
-            # Configure pulse width range for all servos
-            for i in range(self._channels):
-                self._kit.servo[i].set_pulse_width_range(
-                    self._min_pulse,
-                    self._max_pulse
-                )
-            
-            self._initialized = True
-            
-            logger.info(
-                "pca9685_servo.initialized",
-                channels=self._channels,
-                frequency=self._frequency
-            )
-            
-        except Exception as e:
-            logger.error(
-                "pca9685_servo.init_failed",
-                error=str(e),
-                error_type=type(e).__name__
-            )
-            raise HardwareNotAvailableError(
-                f"Failed to initialize PCA9685: {e}"
-            ) from e
+        """Initialise le contrôleur (le PCA9685 doit déjà être initialisé)."""
+        if not self._pca.is_available():
+            self.logger.warning("PCA9685 non disponible")
+        else:
+            self.logger.info("PCA9685ServoController prêt")
     
     def is_available(self) -> bool:
-        """Check if PCA9685 hardware is initialized and ready"""
-        return self._initialized and self._kit is not None
+        """Vérifie si le contrôleur est disponible."""
+        return self._pca.is_available()
     
-    def set_angle(self, channel: int, angle: int) -> None:
-        """Set servo angle
+    def _angle_to_pulse(self, angle: int) -> int:
+        """Convertit un angle (0-180°) en largeur d'impulsion (µs).
         
         Args:
-            channel: Servo channel (0 to channels-1)
-            angle: Target angle in degrees (0-180)
+            angle: Angle en degrés (0-180)
+            
+        Returns:
+            Largeur d'impulsion en microsecondes
+        """
+        if not 0 <= angle <= 180:
+            raise ValueError(f"Angle {angle} hors limites (0-180)")
+        
+        # Interpolation linéaire: angle 0° = min_pulse, 180° = max_pulse
+        pulse = self._min_pulse + (angle / 180.0) * (self._max_pulse - self._min_pulse)
+        return int(pulse)
+    
+    def _pulse_to_angle(self, pulse: int) -> int:
+        """Convertit une largeur d'impulsion (µs) en angle (0-180°).
+        
+        Args:
+            pulse: Largeur d'impulsion en microsecondes
+            
+        Returns:
+            Angle en degrés
+        """
+        angle = (pulse - self._min_pulse) / (self._max_pulse - self._min_pulse) * 180
+        return int(max(0, min(180, angle)))
+    
+    def set_angle(self, channel: int, angle: int) -> None:
+        """Définit l'angle d'un servo (méthode synchrone wrapper).
+        
+        Args:
+            channel: Numéro du canal (0-15)
+            angle: Angle cible en degrés (0-180)
             
         Raises:
-            ValueError: If channel or angle out of range
-            RuntimeError: If not initialized
+            ValueError: Si channel ou angle hors limites
+            RuntimeError: Si PCA9685 non disponible
         """
-        if not self._initialized or not self._kit:
-            raise RuntimeError("PCA9685 not initialized")
-        
-        if not 0 <= channel < self._channels:
-            raise ValueError(
-                f"Channel {channel} out of range (0-{self._channels-1})"
-            )
-        
-        if not 0 <= angle <= 180:
-            raise ValueError(f"Angle {angle} out of range (0-180)")
+        import asyncio
         
         try:
-            self._kit.servo[channel].angle = angle
+            # Utiliser asyncio.run uniquement si pas dans une boucle existante
+            try:
+                loop = asyncio.get_running_loop()
+                # Si on est déjà dans une loop, créer une tâche
+                self.logger.warning(
+                    "set_angle appelé depuis code async, utiliser set_angle_async à la place"
+                )
+                asyncio.create_task(self.set_angle_async(channel, angle))
+            except RuntimeError:
+                # Pas de loop en cours, on peut utiliser asyncio.run
+                asyncio.run(self.set_angle_async(channel, angle))
+        except Exception as e:
+            self.logger.error(f"Erreur set_angle channel {channel}: {e}")
+            raise
+    
+    async def set_angle_async(self, channel: int, angle: int) -> None:
+        """Définit l'angle d'un servo (version async).
+        
+        Args:
+            channel: Numéro du canal (0-15)
+            angle: Angle cible en degrés (0-180)
+            
+        Raises:
+            ValueError: Si channel ou angle hors limites
+            RuntimeError: Si PCA9685 non disponible
+        """
+        if not self._pca.is_available():
+            raise RuntimeError("PCA9685 non disponible")
+        
+        if not 0 <= channel < 16:
+            raise ValueError(f"Canal {channel} hors limites (0-15)")
+        
+        if not 0 <= angle <= 180:
+            raise ValueError(f"Angle {angle} hors limites (0-180)")
+        
+        try:
+            pulse = self._angle_to_pulse(angle)
+            await self._pca.set_servo_pulse(channel, pulse)
             self._current_angles[channel] = angle
             
-            logger.debug(
-                "pca9685_servo.set_angle",
-                channel=channel,
-                angle=angle
+            self.logger.debug(
+                f"Servo {channel}: angle={angle}° (pulse={pulse}µs)"
             )
             
         except Exception as e:
-            logger.error(
-                "pca9685_servo.set_angle_failed",
-                channel=channel,
-                angle=angle,
-                error=str(e)
+            self.logger.error(
+                f"Échec set_angle_async channel {channel}, angle {angle}: {e}"
             )
             raise
     
     def set_angles(self, angles: List[Tuple[int, int]]) -> None:
-        """Set multiple servo angles at once
-        
-        More efficient than calling set_angle multiple times.
+        """Définit plusieurs angles de servos (méthode synchrone wrapper).
         
         Args:
-            angles: List of (channel, angle) tuples
+            angles: Liste de tuples (channel, angle)
+        """
+        import asyncio
+        
+        try:
+            try:
+                loop = asyncio.get_running_loop()
+                self.logger.warning(
+                    "set_angles appelé depuis code async, utiliser set_angles_async"
+                )
+                asyncio.create_task(self.set_angles_async(angles))
+            except RuntimeError:
+                asyncio.run(self.set_angles_async(angles))
+        except Exception as e:
+            self.logger.error(f"Erreur set_angles: {e}")
+            raise
+    
+    async def set_angles_async(self, angles: List[Tuple[int, int]]) -> None:
+        """Définit plusieurs angles de servos (version async).
+        
+        Args:
+            angles: Liste de tuples (channel, angle)
         """
         for channel, angle in angles:
-            self.set_angle(channel, angle)
+            await self.set_angle_async(channel, angle)
         
-        logger.debug(
-            "pca9685_servo.set_angles",
-            count=len(angles)
-        )
+        self.logger.debug(f"Configuré {len(angles)} servos")
     
     def get_angle(self, channel: int) -> Optional[int]:
-        """Get last set angle of servo
+        """Récupère le dernier angle défini pour un servo.
         
-        Note: This returns the last commanded angle, not actual position.
-        PCA9685 doesn't have position feedback.
+        Note: Retourne l'angle commandé, pas la position réelle.
+        Le PCA9685 n'a pas de retour de position.
         
         Args:
-            channel: Servo channel
+            channel: Numéro du canal
             
         Returns:
-            Last commanded angle or None if never set
+            Dernier angle commandé ou None si jamais défini
         """
         return self._current_angles.get(channel)
     
     def set_pwm(self, channel: int, pulse_width: int) -> None:
-        """Set raw PWM pulse width
-        
-        Advanced method for fine-grained control.
+        """Définit la largeur d'impulsion PWM brute (méthode synchrone wrapper).
         
         Args:
-            channel: Servo channel
-            pulse_width: Pulse width in microseconds (500-2500)
+            channel: Numéro du canal
+            pulse_width: Largeur d'impulsion en µs
+        """
+        import asyncio
+        
+        try:
+            try:
+                loop = asyncio.get_running_loop()
+                self.logger.warning(
+                    "set_pwm appelé depuis code async, utiliser set_pwm_async"
+                )
+                asyncio.create_task(self.set_pwm_async(channel, pulse_width))
+            except RuntimeError:
+                asyncio.run(self.set_pwm_async(channel, pulse_width))
+        except Exception as e:
+            self.logger.error(f"Erreur set_pwm: {e}")
+            raise
+    
+    async def set_pwm_async(self, channel: int, pulse_width: int) -> None:
+        """Définit la largeur d'impulsion PWM brute (version async).
+        
+        Méthode avancée pour un contrôle fin.
+        
+        Args:
+            channel: Numéro du canal (0-15)
+            pulse_width: Largeur d'impulsion en µs
             
         Raises:
-            ValueError: If values out of range
-            RuntimeError: If not initialized
+            ValueError: Si valeurs hors limites
+            RuntimeError: Si PCA9685 non disponible
         """
-        if not self._initialized or not self._pca:
-            raise RuntimeError("PCA9685 not initialized")
+        if not self._pca.is_available():
+            raise RuntimeError("PCA9685 non disponible")
         
-        if not 0 <= channel < self._channels:
-            raise ValueError(f"Channel {channel} out of range")
+        if not 0 <= channel < 16:
+            raise ValueError(f"Canal {channel} hors limites (0-15)")
         
         if not self._min_pulse <= pulse_width <= self._max_pulse:
             raise ValueError(
-                f"Pulse width {pulse_width} out of range "
+                f"Pulse width {pulse_width} hors limites "
                 f"({self._min_pulse}-{self._max_pulse})"
             )
         
         try:
-            # Convert microseconds to 12-bit PWM value
-            # PCA9685 runs at specified frequency (default 50Hz = 20ms period)
-            period_us = 1_000_000 / self._frequency
-            pwm_value = int((pulse_width / period_us) * 4096)
+            await self._pca.set_servo_pulse(channel, pulse_width)
             
-            self._pca.channels[channel].duty_cycle = pwm_value
-            
-            # Estimate angle for tracking
-            angle = int((pulse_width - self._min_pulse) / 
-                       (self._max_pulse - self._min_pulse) * 180)
+            # Estimer l'angle pour le tracking
+            angle = self._pulse_to_angle(pulse_width)
             self._current_angles[channel] = angle
             
-            logger.debug(
-                "pca9685_servo.set_pwm",
-                channel=channel,
-                pulse_width=pulse_width,
-                pwm_value=pwm_value,
-                estimated_angle=angle
+            self.logger.debug(
+                f"Servo {channel}: PWM={pulse_width}µs (angle≈{angle}°)"
             )
             
         except Exception as e:
-            logger.error(
-                "pca9685_servo.set_pwm_failed",
-                channel=channel,
-                pulse_width=pulse_width,
-                error=str(e)
+            self.logger.error(
+                f"Échec set_pwm_async channel {channel}, pulse {pulse_width}: {e}"
             )
             raise
     
     async def cleanup(self) -> None:
-        """Cleanup PCA9685 resources and disable outputs"""
-        logger.info("pca9685_servo.cleanup")
+        """Nettoyage du contrôleur (désactive les sorties)."""
+        self.logger.info("Nettoyage PCA9685ServoController")
         
         try:
-            if self._pca:
-                # Disable all outputs safely
-                self._pca.deinit()
-            
-            if self._i2c:
-                self._i2c.deinit()
-            
-            self._initialized = False
-            self._kit = None
-            self._pca = None
-            self._i2c = None
+            # Le cleanup du PCA9685 sera fait par le composant lui-même
             self._current_angles.clear()
-            
-            logger.info("pca9685_servo.cleanup_complete")
+            self.logger.info("PCA9685ServoController nettoyé")
             
         except Exception as e:
-            logger.error(
-                "pca9685_servo.cleanup_failed",
-                error=str(e)
-            )
+            self.logger.error(f"Erreur lors du cleanup: {e}")
     
     def reset(self) -> None:
-        """Reset all servos to neutral position (90 degrees)"""
-        logger.info("pca9685_servo.reset")
+        """Remet tous les servos en position neutre (90°)."""
+        import asyncio
         
-        for channel in range(self._channels):
+        try:
             try:
-                self.set_angle(channel, 90)
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(self.reset_async())
+            except RuntimeError:
+                asyncio.run(self.reset_async())
+        except Exception as e:
+            self.logger.error(f"Erreur reset: {e}")
+            raise
+    
+    async def reset_async(self) -> None:
+        """Remet tous les servos en position neutre (90°) - version async."""
+        self.logger.info("Reset de tous les servos à 90°")
+        
+        for channel in range(16):
+            try:
+                await self.set_angle_async(channel, 90)
             except Exception as e:
-                logger.warning(
-                    "pca9685_servo.reset_channel_failed",
-                    channel=channel,
-                    error=str(e)
+                self.logger.warning(
+                    f"Échec reset servo {channel}: {e}"
                 )
+    
+    def get_status(self) -> Dict[str, Any]:
+        """Retourne le statut du contrôleur."""
+        return {
+            "type": "pca9685_servo_controller",
+            "available": self.is_available(),
+            "min_pulse": self._min_pulse,
+            "max_pulse": self._max_pulse,
+            "current_angles": dict(self._current_angles),
+            "pca9685_status": self._pca.get_status()
+        }
