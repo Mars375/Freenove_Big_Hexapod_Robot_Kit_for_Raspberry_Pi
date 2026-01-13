@@ -1,10 +1,11 @@
-"""Modern hexapod movement controller"""
+"""Modern hexapod movement controller with HAL"""
 import asyncio
 import math
-from typing import Tuple, Dict, List
+from typing import Tuple, Dict, List, Optional
 import structlog
 
 from core.exceptions import HardwareNotAvailableError, CommandExecutionError
+from core.hardware.interfaces import IServoController
 from core.hardware.kinematics import LegKinematics
 from core.hardware.gaits import GaitController
 
@@ -52,10 +53,24 @@ class Leg:
 
 
 class MovementController:
-    """Modern hexapod movement controller with full gait support"""
+    """Modern hexapod movement controller with full gait support
     
-    def __init__(self):
-        self._servo = None
+    Uses dependency injection for servo controller, enabling:
+    - Hardware abstraction
+    - Easy testing with mocks
+    - Multiple servo implementations
+    - Clean separation of concerns
+    """
+    
+    def __init__(self, servo_controller: Optional[IServoController] = None):
+        """
+        Initialize movement controller
+        
+        Args:
+            servo_controller: Servo controller implementation (injected)
+                            If None, will need to be set before use
+        """
+        self._servo = servo_controller
         self._initialized = False
         self._moving = False
         self._gait_task = None
@@ -84,17 +99,28 @@ class MovementController:
         # Gait controller
         self.gait = GaitController(step_height=20.0, stride_length=30.0)
         
+        logger.info(
+            "movement_controller.created",
+            has_servo=servo_controller is not None
+        )
+    
+    def set_servo_controller(self, servo_controller: IServoController):
+        """Set servo controller after initialization (for lazy injection)"""
+        self._servo = servo_controller
+        logger.info("movement_controller.servo_set")
+        
     async def initialize(self):
-        """Initialize servo controller"""
+        """Initialize servo controller and stand up"""
+        if not self._servo:
+            raise HardwareNotAvailableError(
+                "No servo controller set. Use set_servo_controller() first."
+            )
+        
         try:
-            # Import servo from legacy (only dependency we keep for now)
-            import sys
-            from pathlib import Path
-            legacy_path = Path(__file__).parent.parent.parent / "legacy" / "Code" / "Server"
-            sys.path.insert(0, str(legacy_path))
+            logger.info("movement_controller.initializing")
             
-            from servo import Servo
-            self._servo = Servo()
+            # Initialize servo hardware
+            await self._servo.initialize()
             
             # Stand in neutral position
             await self.stand()
@@ -102,15 +128,18 @@ class MovementController:
             self._initialized = True
             logger.info("movement_controller.initialized")
             
-        except ImportError as e:
-            logger.warning("movement_controller.servo_unavailable", error=str(e))
         except Exception as e:
             logger.error("movement_controller.init_failed", error=str(e))
             raise
     
     @property
     def is_available(self) -> bool:
-        return self._initialized and self._servo is not None
+        """Check if controller is ready to use"""
+        return (
+            self._initialized and 
+            self._servo is not None and 
+            self._servo.is_available()
+        )
     
     def _servo_angles_from_leg_angles(
         self, 
@@ -163,10 +192,18 @@ class MovementController:
         # Convert to servo angles
         servo_angles = self._servo_angles_from_leg_angles(leg, coxa, femur, tibia)
         
-        # Send to servos
-        self._servo.set_servo_angle(leg.servo_pins[0], servo_angles[0])
-        self._servo.set_servo_angle(leg.servo_pins[1], servo_angles[1])
-        self._servo.set_servo_angle(leg.servo_pins[2], servo_angles[2])
+        # Send to servos using HAL
+        try:
+            self._servo.set_angle(leg.servo_pins[0], servo_angles[0])
+            self._servo.set_angle(leg.servo_pins[1], servo_angles[1])
+            self._servo.set_angle(leg.servo_pins[2], servo_angles[2])
+        except Exception as e:
+            logger.error(
+                "movement.servo_command_failed",
+                leg_id=leg.id,
+                error=str(e)
+            )
+            raise
         
         # Update state
         leg.position = [x, y, z]
@@ -362,12 +399,16 @@ class MovementController:
     
     async def cleanup(self):
         """Cleanup resources"""
+        logger.info("movement_controller.cleanup")
+        
         if self._moving:
             await self.stop()
         
         if self._servo:
             try:
+                # Return to standing position
                 await self.stand()
-                logger.info("movement_controller.cleanup")
+                # Cleanup servo hardware
+                await self._servo.cleanup()
             except Exception as e:
                 logger.error("movement_controller.cleanup_failed", error=str(e))
