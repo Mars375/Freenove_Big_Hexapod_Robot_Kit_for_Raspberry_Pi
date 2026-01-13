@@ -211,13 +211,17 @@ class LEDController:
         if not np:
             return None
             
-        d = np.array(self._led_color).ravel()
-        tx = np.zeros(len(d) * 8, dtype=np.uint8)
+        d = self._led_color
+        tx = [0] * (len(d) * 8)
         
-        for ibit in range(8):
-            tx[7 - ibit::8] = ((d >> ibit) & 1) * 0x78 + 0x80
+        for i, val in enumerate(d):
+            for ibit in range(8):
+                if (val >> ibit) & 1:
+                    tx[i * 8 + (7 - ibit)] = 0x78
+                else:
+                    tx[i * 8 + (7 - ibit)] = 0x80
         
-        return tx.tolist()
+        return tx
     
     def show(self, mode: int = 1) -> None:
         """Update the LED strip with current color data.
@@ -266,25 +270,17 @@ class LEDController:
         Returns:
             RGB tuple (0-255 each)
         """
-        h = h % 360
-        rgb_max = round(v * 2.55)
-        rgb_min = round(rgb_max * (100 - s) / 100)
-        i = round(h / 60)
-        diff = round(h % 60)
-        rgb_adj = round((rgb_max - rgb_min) * diff / 60)
+        import colorsys
         
-        if i == 0:
-            return (rgb_max, rgb_min + rgb_adj, rgb_min)
-        elif i == 1:
-            return (rgb_max - rgb_adj, rgb_max, rgb_min)
-        elif i == 2:
-            return (rgb_min, rgb_max, rgb_min + rgb_adj)
-        elif i == 3:
-            return (rgb_min, rgb_max - rgb_adj, rgb_max)
-        elif i == 4:
-            return (rgb_min + rgb_adj, rgb_min, rgb_max)
-        else:
-            return (rgb_max, rgb_min, rgb_max - rgb_adj)
+        # Normalize h, s, v to 0-1 range
+        h /= 360.0
+        s /= 100.0
+        v /= 100.0
+
+        r, g, b = colorsys.hsv_to_rgb(h, s, v)
+
+        # Scale r, g, b to 0-255 range and convert to int
+        return int(r * 255), int(g * 255), int(b * 255)
     
     def off(self) -> None:
         """Turn off all LEDs."""

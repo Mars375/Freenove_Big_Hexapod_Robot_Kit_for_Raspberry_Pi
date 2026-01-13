@@ -4,9 +4,7 @@ import structlog
 
 from core.config import Settings
 from core.hardware.interfaces import IServoController
-from unittest.mock import MagicMock
-I2CInterface = MagicMock()
-SMBusI2CInterface = MagicMock()
+from core.hardware.interfaces.i2c import I2CInterface, SMBusI2CInterface
 from core.hardware.drivers import (
     PCA9685,
     PCA9685ServoController,
