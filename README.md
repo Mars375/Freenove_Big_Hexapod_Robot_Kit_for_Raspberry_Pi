@@ -2,42 +2,48 @@
 
 ![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-green.svg)
-![Tests](https://img.shields.io/badge/tests-10%20passed-brightgreen.svg)
-![Coverage](https://img.shields.io/badge/coverage-98%25-brightgreen.svg)
+![Tests](https://img.shields.io/badge/tests-26%20passed-brightgreen.svg)
+![Coverage](https://img.shields.io/badge/coverage-89%25-brightgreen.svg)
 ![License](https://img.shields.io/badge/license-CC%20BY--NC--SA%203.0-orange.svg)
 
-Version modernisée du Freenove Big Hexapod Robot avec architecture microservices, API REST, logging structuré, et intégration Orion-SRE.
+Version modernisée du Freenove Big Hexapod Robot avec architecture microservices, API REST complète, logging structuré, et intégration Orion-SRE.
 
 ---
 
-## 🚀 Changements Majeurs (v2.0)
+## 🚀 Nouveautés v2.1 (Phase 2)
 
-### ✨ Nouvelles Features
-- **API REST moderne** avec FastAPI
-- **Logging structuré** avec structlog (JSON pour production)
-- **Configuration externalisée** avec Pydantic Settings
-- **Tests automatisés** avec pytest (98% coverage)
-- **Hot reload** en développement
-- **Métriques Prometheus** ready
-- **Health checks** pour monitoring
-- **CORS configuré** pour applications web
+### ✨ API REST Complète
+- **15 endpoints** pour contrôle complet du robot
+- **Validation Pydantic** sur toutes les requêtes
+- **Documentation Swagger** interactive
+- **26 tests automatisés** (89% coverage)
 
-### 🏗️ Architecture
+### 🎮 Endpoints disponibles
 
-Ancien (v1.x):           Nouveau (v2.0):
-┌─────────────┐          ┌──────────────┐
-│  Monolithe  │          │   FastAPI    │
-│   PyQt5     │   →      │   REST API   │
-│ Threading   │          │    asyncio   │
-└─────────────┘          └──────────────┘
-                         ┌──────────────┐
-                         │  Core Modules│
-                         │ Config+Logger│
-                         └──────────────┘
-                         ┌──────────────┐
-                         │   Features   │
-                         │  (modulaires)│
-                         └──────────────┘
+#### Movement Control
+- POST /api/v1/movement/move - Déplacer le robot
+- POST /api/v1/movement/stop - Arrêt d'urgence
+- POST /api/v1/movement/attitude - Contrôle attitude (roll/pitch/yaw)
+- POST /api/v1/movement/position - Contrôle position (x/y/z)
+- GET /api/v1/movement/status - État du mouvement
+
+#### Sensors
+- GET /api/v1/sensors/imu - Données IMU (accéléromètre/gyroscope)
+- GET /api/v1/sensors/ultrasonic - Distance ultrasonique
+- GET /api/v1/sensors/battery - État batterie
+- GET /api/v1/sensors/all - Tous les capteurs
+
+#### Camera
+- POST /api/v1/camera/rotate - Rotation caméra
+- GET /api/v1/camera/config - Configuration caméra
+- POST /api/v1/camera/config - Modifier configuration
+
+#### LEDs
+- POST /api/v1/leds/mode - Mode LED (off/solid/chase/blink/breathing/rainbow)
+- POST /api/v1/leds/color - Couleur RGB
+
+#### Buzzer
+- POST /api/v1/buzzer/beep - Contrôle buzzer
 
 ---
 
@@ -46,211 +52,110 @@ Ancien (v1.x):           Nouveau (v2.0):
     .
     ├── api/                    # API REST FastAPI
     │   ├── main.py            # Application principale
-    │   └── routers/           # Endpoints modulaires (à venir)
+    │   ├── models.py          # Modèles Pydantic
+    │   └── routers/           # Endpoints modulaires
+    │       ├── movement.py    # Contrôle mouvement
+    │       ├── sensors.py     # Lecture capteurs
+    │       ├── camera.py      # Contrôle caméra
+    │       ├── leds.py        # Contrôle LEDs
+    │       └── buzzer.py      # Contrôle buzzer
     ├── core/                   # Modules centraux
     │   ├── config.py          # Configuration Pydantic
     │   └── logger.py          # Logging structuré
     ├── features/               # Features modulaires
-    │   ├── telemetry/         # Métriques et monitoring
-    │   ├── autonomous/        # Navigation autonome
-    │   ├── vision/            # Computer vision
-    │   └── orion_bridge/      # Intégration Orion-SRE
-    ├── tests/                  # Tests unitaires et intégration
+    │   ├── telemetry/         # Métriques (Phase 3)
+    │   ├── autonomous/        # Navigation autonome (Phase 3)
+    │   ├── vision/            # Computer vision (Phase 3)
+    │   └── orion_bridge/      # Intégration Orion-SRE (Phase 4)
+    ├── tests/                  # Tests (26 tests, 89% coverage)
     │   ├── unit/              # Tests unitaires
     │   └── integration/       # Tests d'intégration
     ├── config/                 # Fichiers de configuration
-    │   ├── config.yaml        # Config application
-    │   └── logging.yaml       # Config logging
     ├── legacy/                 # Code original (backup)
-    │   └── Code/              # Code Freenove original
     ├── docs/                   # Documentation
-    ├── logs/                   # Logs (gitignored)
-    ├── .env                    # Variables d'environnement (gitignored)
-    ├── .env.example           # Template de configuration
-    ├── pyproject.toml         # Configuration Poetry
-    ├── requirements.txt       # Dépendances pip
-    └── Makefile              # Commandes de développement
+    └── Makefile               # Commandes de développement
 
 ---
 
 ## ⚙️ Installation
 
-### Prérequis
-- Python 3.11+
-- Poetry (recommandé) ou pip
-- Raspberry Pi OS (pour le robot physique)
-
-### 1. Cloner le repository
-
-    git clone https://github.com/Mars375/Freenove_Big_Hexapod_Robot_Kit_for_Raspberry_Pi.git
-    cd Freenove_Big_Hexapod_Robot_Kit_for_Raspberry_Pi
-
-### 2. Installer les dépendances
-
-**Avec Poetry (recommandé):**
-
-    # Installer Poetry
-    pipx install poetry
-
-    # Installer les dépendances
-    poetry install
-
-    # Activer l'environnement
-    source $(poetry env info --path)/bin/activate
-
-**Avec pip:**
-
-    # Créer un environnement virtuel
-    python3 -m venv venv
-    source venv/bin/activate
-
-    # Installer les dépendances
-    pip install -r requirements.txt
-
-### 3. Configurer l'environnement
-
-    # Copier le fichier de configuration
-    cp .env.example .env
-
-    # Éditer .env avec vos paramètres
-    nano .env
+Installation identique à la Phase 1 (voir section complète dans le fichier).
 
 ---
 
-## 🎮 Usage
+## 🎮 Usage Rapide
 
-### Développement
-
-    # Lancer le serveur de développement (avec hot reload)
+    # Lancer le serveur
     make dev
 
-    # Ou avec uvicorn directement
-    uvicorn api.main:app --reload
+    # Voir la documentation interactive
+    # Ouvrir http://localhost:8000/docs
 
-Le serveur démarre sur http://localhost:8000
+    # Exemple: Déplacer le robot
+    curl -X POST http://localhost:8000/api/v1/movement/move \
+      -H "Content-Type: application/json" \
+      -d '{"mode":"motion","x":10,"y":5,"speed":7,"angle":0}'
 
-**Endpoints disponibles:**
-- GET / - Informations de base
-- GET /health - Health check (pour monitoring)
-- GET /metrics - Métriques Prometheus
-- GET /docs - Documentation Swagger UI interactive
-- GET /redoc - Documentation ReDoc
+    # Exemple: Lire les capteurs
+    curl http://localhost:8000/api/v1/sensors/all
 
-### Tests
-
-    # Lancer tous les tests
-    make test
-
-    # Avec couverture de code
-    pytest --cov=. --cov-report=html
-
-    # Voir le rapport HTML
-    open htmlcov/index.html
-
-### Autres commandes
-
-    # Voir toutes les commandes disponibles
-    make help
-
-    # Formater le code
-    make format
-
-    # Linter
-    make lint
-
-    # Nettoyer les fichiers cache
-    make clean
+    # Exemple: Contrôler les LEDs
+    curl -X POST http://localhost:8000/api/v1/leds/mode \
+      -H "Content-Type: application/json" \
+      -d '{"mode":"solid","color":{"red":255,"green":0,"blue":0}}'
 
 ---
 
 ## 🧪 Tests
 
-Le projet utilise pytest avec une couverture de 98%.
+    # Lancer tous les tests
+    make test
 
-    # Tests unitaires uniquement
-    pytest tests/unit/
-
-    # Tests d'intégration uniquement
-    pytest tests/integration/
-
-    # Tests avec verbosité
-    pytest -v
-
-    # Tests avec couverture détaillée
-    pytest --cov=. --cov-report=term-missing
-
-**Résultats actuels:**
-- ✅ 10/10 tests passés
-- ✅ 98% de couverture
-- ✅ Tous les modules core testés
+    # Résultats: 26/26 tests passés, 89% coverage
 
 ---
 
-## 📊 Monitoring & Observabilité
+## 📊 API Examples
 
-### Logs structurés
+### Déplacer le robot
 
-Les logs sont au format JSON en production et colorés en développement.
-
-Exemple Python:
-
-    from core.logger import get_logger
-
-    logger = get_logger(__name__)
-    logger.info("robot.movement", x=10, y=5, speed=7, angle=0)
-
-Output JSON:
-
+    POST /api/v1/movement/move
     {
-      "event": "robot.movement",
-      "timestamp": "2026-01-13T15:00:00.000000Z",
-      "level": "info",
-      "app": "hexapod-robot",
-      "version": "2.0.0",
-      "environment": "production",
-      "robot": "Hexapod-01",
+      "mode": "motion",
       "x": 10,
       "y": 5,
       "speed": 7,
       "angle": 0
     }
 
-### Health Check
+### Contrôler l'attitude
 
-    curl http://localhost:8000/health
-
-Réponse:
-
+    POST /api/v1/movement/attitude
     {
-      "status": "healthy",
-      "robot": "Hexapod-01",
-      "version": "2.0.0",
-      "camera_enabled": true,
-      "imu_enabled": true,
-      "ultrasonic_enabled": true
+      "roll": 5,
+      "pitch": -3,
+      "yaw": 0
     }
 
----
+### Lire la batterie
 
-## 🔧 Configuration
+    GET /api/v1/sensors/battery
+    
+    Response:
+    {
+      "voltage": 7.4,
+      "percentage": 85,
+      "is_low": false,
+      "is_critical": false
+    }
 
-La configuration utilise Pydantic Settings et peut être définie via:
-1. Variables d'environnement
-2. Fichier .env
-3. Valeurs par défaut
+### Rotation caméra
 
-### Variables principales
-
-| Variable | Description | Défaut |
-|----------|-------------|--------|
-| APP_NAME | Nom de l'application | hexapod-robot |
-| ENVIRONMENT | Environnement (dev/staging/prod) | development |
-| API_PORT | Port de l'API REST | 8000 |
-| LOG_LEVEL | Niveau de log | INFO |
-| ROBOT_NAME | Nom du robot | Hexapod-01 |
-| ORION_BRAIN_URL | URL Orion Brain | http://localhost:9000 |
-
-Voir .env.example pour la liste complète.
+    POST /api/v1/camera/rotate
+    {
+      "horizontal": 45,
+      "vertical": -20
+    }
 
 ---
 
@@ -263,18 +168,20 @@ Voir .env.example pour la liste complète.
 - [x] API FastAPI de base
 - [x] Tests unitaires et intégration
 
-### Phase 2 : API REST Complète (Prochaine étape)
-- [ ] Endpoints de mouvement
-- [ ] Endpoints caméra
-- [ ] Endpoints capteurs
-- [ ] WebSocket pour streaming
-- [ ] Authentication JWT
+### Phase 2 : API REST Complète ✅ (TERMINÉ)
+- [x] Endpoints de mouvement
+- [x] Endpoints caméra
+- [x] Endpoints capteurs
+- [x] Endpoints LEDs et buzzer
+- [x] Validation Pydantic complète
+- [x] 26 tests automatisés
 
-### Phase 3 : Intelligence
+### Phase 3 : Intelligence (Prochaine étape)
 - [ ] Navigation autonome
 - [ ] Évitement d'obstacles
 - [ ] Computer vision (YOLOv8)
 - [ ] QR code scanner
+- [ ] WebSocket streaming vidéo
 
 ### Phase 4 : Intégration Orion-SRE
 - [ ] Bridge Orion
@@ -289,58 +196,18 @@ Voir .env.example pour la liste complète.
 
 ---
 
-## 🤝 Contribution
-
-Ce projet est un fork du [Freenove Big Hexapod Robot Kit](https://github.com/Freenove/Freenove_Big_Hexapod_Robot_Kit_for_Raspberry_Pi) avec des améliorations modernes.
-
-### Développement
-
-1. Créer une branche feature
-
-    git checkout -b feature/ma-feature
-
-2. Développer avec les tests
-
-    make dev  # Terminal 1
-    make test # Terminal 2
-
-3. Commiter avec des messages conventionnels
-
-    git commit -m "feat: add new feature"
-    git commit -m "fix: correct bug"
-    git commit -m "test: add tests"
-
-4. Push et créer une PR
-
-    git push origin feature/ma-feature
-
----
-
 ## 📝 License
 
 Ce projet est sous licence CC BY-NC-SA 3.0.
-
-- ✅ Usage personnel et éducatif
-- ❌ Usage commercial interdit
-- ✅ Modifications autorisées
-- ✅ Partage autorisé (même licence)
 
 ---
 
 ## 🙏 Crédits
 
-- **Freenove** - Kit robot original et hardware
-- **Mars375** - Modernisation et architecture v2.0
-- **FastAPI** - Framework web moderne
-- **Pydantic** - Validation et configuration
-- **Pytest** - Framework de tests
-
----
-
-## 📧 Contact
-
-- GitHub: @Mars375
-- Projet Orion-SRE: https://github.com/Mars375/Orion-SRE
+- **Freenove** - Kit robot original
+- **Mars375** - Modernisation v2.x
+- **FastAPI** - Framework web
+- **Pydantic** - Validation
 
 ---
 
