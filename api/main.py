@@ -3,7 +3,7 @@ Main FastAPI application.
 Provides REST API endpoints for robot control and monitoring.
 """
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -61,8 +61,8 @@ app = create_app()
 
 
 @app.get("/")
-async def root() -> dict[str, str]:
-    """Root endpoint with basic info."""
+async def root() -> dict[str, Any]:
+    """Root endpoint with basic info and available endpoints."""
     return {
         "app": settings.app_name,
         "version": settings.app_version,
