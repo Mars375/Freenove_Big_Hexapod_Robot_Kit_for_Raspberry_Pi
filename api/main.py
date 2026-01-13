@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from api.routers import buzzer, camera, leds, movement, sensors
+from api.routers import buzzer, camera, leds, movement, sensors, websocket
 from core.config import settings
 from core.logger import get_logger
 
@@ -53,6 +53,7 @@ def create_app() -> FastAPI:
     app.include_router(camera.router, prefix="/api/v1/camera", tags=["camera"])
     app.include_router(leds.router, prefix="/api/v1/leds", tags=["leds"])
     app.include_router(buzzer.router, prefix="/api/v1/buzzer", tags=["buzzer"])
+    app.include_router(websocket.router, prefix="/api/v1/ws", tags=["websocket"])
     
     return app
 
