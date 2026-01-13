@@ -1,7 +1,7 @@
 """
 Pydantic models for API request and response validation.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
@@ -65,7 +65,7 @@ class MovementResponse(BaseModel):
     success: bool
     message: str
     command: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ============= Camera Models =============
@@ -101,7 +101,7 @@ class IMUData(BaseModel):
 class UltrasonicData(BaseModel):
     """Ultrasonic sensor data."""
     distance: float = Field(description="Distance in centimeters")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class BatteryData(BaseModel):
@@ -118,7 +118,7 @@ class AllSensorsData(BaseModel):
     imu: Optional[IMUData] = None
     ultrasonic: Optional[UltrasonicData] = None
     battery: Optional[BatteryData] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ============= LED Models =============
@@ -175,4 +175,4 @@ class CommandResponse(BaseModel):
     success: bool
     message: str
     data: Optional[dict] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
