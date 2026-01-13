@@ -1,50 +1,50 @@
-"""
-Buzzer control endpoints.
-Handles buzzer beeps and sounds.
-"""
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
+from core.dependencies import get_hardware_factory
+from core.hardware.factory import HardwareFactory
+from api.models.buzzer import BuzzerCommand, BuzzerResponse
 
-from api.models import BuzzerRequest, BuzzerResponse
-from core.logger import get_logger
-
-logger = get_logger(__name__)
-router = APIRouter()
+router = APIRouter(prefix="/buzzer", tags=["buzzer"])
 
 
 @router.post("/beep", response_model=BuzzerResponse)
-async def beep_buzzer(request: BuzzerRequest) -> BuzzerResponse:
-    """
-    Control buzzer beep.
+async def beep(
+    command: BuzzerCommand,
+    hardware: HardwareFactory = Depends(get_hardware_factory)
+) -> BuzzerResponse:
+    buzzer = hardware.get_buzzer()
     
-    Args:
-        request: Buzzer control (enabled, duration)
+    if not buzzer or not buzzer.is_available():
+        raise HTTPException(status_code=503, detail="Buzzer not available")
     
-    Returns:
-        Buzzer response
+    success = buzzer.beep(
+        frequency=command.frequency,
+        duration=command.duration
+    )
     
-    Example:
-        POST /api/v1/buzzer/beep
-        {
-            "enabled": true,
-            "duration": 0.5
-        }
-    """
-    logger.info("buzzer.beep", enabled=request.enabled, duration=request.duration)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to beep")
     
-    command = f"CMD_BUZZER#{'1' if request.enabled else '0'}"
+    return BuzzerResponse(
+        success=True,
+        message=f"Beep at {command.frequency}Hz for {command.duration}s"
+    )
+
+
+@router.post("/stop", response_model=BuzzerResponse)
+async def stop_buzzer(
+    hardware: HardwareFactory = Depends(get_hardware_factory)
+) -> BuzzerResponse:
+    buzzer = hardware.get_buzzer()
     
-    try:
-        # TODO: Send command to robot
-        # If duration is set, schedule stop after duration
-        
-        return BuzzerResponse(
-            success=True,
-            enabled=request.enabled,
-            message=f"Buzzer {'enabled' if request.enabled else 'disabled'}"
-        )
-    except Exception as e:
-        logger.error("buzzer.beep.error", error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to control buzzer: {str(e)}"
-        )
+    if not buzzer or not buzzer.is_available():
+        raise HTTPException(status_code=503, detail="Buzzer not available")
+    
+    success = buzzer.stop()
+    
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to stop buzzer")
+    
+    return BuzzerResponse(
+        success=True,
+        message="Buzzer stopped"
+    )

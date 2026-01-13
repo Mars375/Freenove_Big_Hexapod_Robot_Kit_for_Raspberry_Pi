@@ -1,0 +1,77 @@
+"""Movement control abstraction"""
+import sys
+from pathlib import Path
+import structlog
+from typing import Optional
+
+# Add legacy to path
+legacy_path = Path(__file__).parent.parent.parent / "legacy" / "Code" / "Server"
+sys.path.insert(0, str(legacy_path))
+
+from core.exceptions import HardwareNotAvailableError, CommandExecutionError
+
+logger = structlog.get_logger()
+
+
+class MovementController:
+    """Abstraction for robot movement control"""
+    
+    def __init__(self):
+        self._control = None
+        self._initialize_hardware()
+    
+    def _initialize_hardware(self):
+        """Initialize legacy control module"""
+        try:
+            from control import Control
+            self._control = Control()
+            logger.info("movement_controller.initialized")
+        except Exception as e:
+            logger.error("movement_controller.init_failed", error=str(e))
+            self._control = None
+    
+    @property
+    def is_available(self) -> bool:
+        """Check if hardware is available"""
+        return self._control is not None
+    
+    async def move(self, mode: str, x: int, y: int, speed: int, angle: int) -> bool:
+        """Execute movement command"""
+        if not self.is_available:
+            raise HardwareNotAvailableError("Movement controller not initialized")
+        
+        try:
+            command = f"CMD_MOVE#{mode}#{x}#{y}#{speed}#{angle}"
+            self._control.order = command
+            self._control.run()
+            logger.info("movement_controller.move", command=command)
+            return True
+        except Exception as e:
+            logger.error("movement_controller.move_failed", error=str(e))
+            raise CommandExecutionError(f"Move failed: {e}")
+    
+    async def set_attitude(self, roll: float, pitch: float, yaw: float) -> bool:
+        """Set robot attitude (roll, pitch, yaw)"""
+        if not self.is_available:
+            raise HardwareNotAvailableError("Movement controller not initialized")
+        
+        try:
+            self._control.set_attitude(roll, pitch, yaw)
+            logger.info("movement_controller.attitude", roll=roll, pitch=pitch, yaw=yaw)
+            return True
+        except Exception as e:
+            logger.error("movement_controller.attitude_failed", error=str(e))
+            raise CommandExecutionError(f"Attitude set failed: {e}")
+    
+    async def stop(self) -> bool:
+        """Emergency stop"""
+        if not self.is_available:
+            raise HardwareNotAvailableError("Movement controller not initialized")
+        
+        try:
+            self._control.stop()
+            logger.info("movement_controller.stop")
+            return True
+        except Exception as e:
+            logger.error("movement_controller.stop_failed", error=str(e))
+            raise CommandExecutionError(f"Stop failed: {e}")

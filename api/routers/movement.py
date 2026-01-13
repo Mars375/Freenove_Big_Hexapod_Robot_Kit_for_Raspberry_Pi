@@ -1,199 +1,85 @@
-"""
-Movement control endpoints.
-Handles robot locomotion, attitude, and position control.
-"""
-from fastapi import APIRouter, HTTPException, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, HTTPException
+from api.models import MoveCommand, AttitudeCommand, StandardResponse
+from core.robot_controller import get_robot_controller
+from core.exceptions import HardwareNotAvailableError, CommandExecutionError
+import structlog
 
-from api.models import (
-    AttitudeRequest,
-    CommandResponse,
-    MoveRequest,
-    MovementResponse,
-    PositionRequest,
-)
-from core.config import settings
-from core.logger import get_logger
-
-logger = get_logger(__name__)
 router = APIRouter()
-
-# TODO: Import actual robot controller from legacy code
-# For now, we simulate the commands
+logger = structlog.get_logger()
 
 
-@router.post("/move", response_model=MovementResponse, status_code=status.HTTP_200_OK)
-async def move_robot(request: MoveRequest) -> MovementResponse:
-    """
-    Move the robot with specified parameters.
-    
-    Args:
-        request: Movement parameters (mode, x, y, speed, angle)
-    
-    Returns:
-        Movement response with success status
-    
-    Example:
-        POST /api/v1/movement/move
-        {
-            "mode": "motion",
-            "x": 10,
-            "y": 5,
-            "speed": 7,
-            "angle": 0
-        }
-    """
-    logger.info(
-        "movement.move",
-        mode=request.mode.value,
-        x=request.x,
-        y=request.y,
-        speed=request.speed,
-        angle=request.angle
-    )
-    
-    # TODO: Call actual robot control
-    # For now, simulate
-    command = f"CMD_MOVE#{request.mode.value}#{request.x}#{request.y}#{request.speed}#{request.angle}"
+@router.post("/move", response_model=StandardResponse)
+async def move_robot(command: MoveCommand):
+    """Execute movement command"""
+    logger.info("movement.move", mode=command.mode, x=command.x, y=command.y, 
+                speed=command.speed, angle=command.angle)
     
     try:
-        # TODO: Send command to robot
-        # await robot_controller.send_command(command)
+        robot = get_robot_controller()
+        await robot.movement.move(
+            mode=command.mode,
+            x=command.x,
+            y=command.y,
+            speed=command.speed,
+            angle=command.angle
+        )
         
-        return MovementResponse(
+        return StandardResponse(
             success=True,
             message="Movement command sent successfully",
-            command=command
+            command=f"CMD_MOVE#{command.mode}#{command.x}#{command.y}#{command.speed}#{command.angle}"
         )
-    except Exception as e:
-        logger.error("movement.move.error", error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to execute movement: {str(e)}"
-        )
-
-
-@router.post("/stop", response_model=CommandResponse)
-async def stop_robot() -> CommandResponse:
-    """
-    Stop all robot movement immediately.
     
-    Returns:
-        Command response with success status
-    """
+    except HardwareNotAvailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except CommandExecutionError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/attitude", response_model=StandardResponse)
+async def set_attitude(command: AttitudeCommand):
+    """Set robot attitude (roll, pitch, yaw)"""
+    logger.info("movement.attitude", roll=command.roll, pitch=command.pitch, yaw=command.yaw)
+    
+    try:
+        robot = get_robot_controller()
+        await robot.movement.set_attitude(
+            roll=command.roll,
+            pitch=command.pitch,
+            yaw=command.yaw
+        )
+        
+        return StandardResponse(
+            success=True,
+            message="Attitude set successfully",
+            data={
+                "roll": command.roll,
+                "pitch": command.pitch,
+                "yaw": command.yaw
+            }
+        )
+    
+    except HardwareNotAvailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except CommandExecutionError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/stop", response_model=StandardResponse)
+async def stop_robot():
+    """Emergency stop"""
     logger.info("movement.stop")
     
     try:
-        # TODO: Send stop command to robot
-        # await robot_controller.stop()
+        robot = get_robot_controller()
+        await robot.movement.stop()
         
-        return CommandResponse(
+        return StandardResponse(
             success=True,
             message="Robot stopped successfully"
         )
-    except Exception as e:
-        logger.error("movement.stop.error", error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to stop robot: {str(e)}"
-        )
-
-
-@router.post("/attitude", response_model=CommandResponse)
-async def set_attitude(request: AttitudeRequest) -> CommandResponse:
-    """
-    Set robot attitude (roll, pitch, yaw).
     
-    Args:
-        request: Attitude parameters
-    
-    Returns:
-        Command response
-    
-    Example:
-        POST /api/v1/movement/attitude
-        {
-            "roll": 5,
-            "pitch": -3,
-            "yaw": 0
-        }
-    """
-    logger.info(
-        "movement.attitude",
-        roll=request.roll,
-        pitch=request.pitch,
-        yaw=request.yaw
-    )
-    
-    command = f"CMD_ATTITUDE#{request.roll}#{request.pitch}#{request.yaw}"
-    
-    try:
-        # TODO: Send command to robot
-        
-        return CommandResponse(
-            success=True,
-            message="Attitude set successfully",
-            data={"roll": request.roll, "pitch": request.pitch, "yaw": request.yaw}
-        )
-    except Exception as e:
-        logger.error("movement.attitude.error", error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to set attitude: {str(e)}"
-        )
-
-
-@router.post("/position", response_model=CommandResponse)
-async def set_position(request: PositionRequest) -> CommandResponse:
-    """
-    Set robot body position relative to legs.
-    
-    Args:
-        request: Position parameters
-    
-    Returns:
-        Command response
-    
-    Example:
-        POST /api/v1/movement/position
-        {
-            "x": 10,
-            "y": 5,
-            "z": -10
-        }
-    """
-    logger.info("movement.position", x=request.x, y=request.y, z=request.z)
-    
-    command = f"CMD_POSITION#{request.x}#{request.y}#{request.z}"
-    
-    try:
-        # TODO: Send command to robot
-        
-        return CommandResponse(
-            success=True,
-            message="Position set successfully",
-            data={"x": request.x, "y": request.y, "z": request.z}
-        )
-    except Exception as e:
-        logger.error("movement.position.error", error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to set position: {str(e)}"
-        )
-
-
-@router.get("/status")
-async def get_movement_status() -> dict:
-    """
-    Get current movement status.
-    
-    Returns:
-        Current movement parameters and robot state
-    """
-    # TODO: Get actual status from robot
-    return {
-        "moving": False,
-        "current_speed": 0,
-        "current_position": {"x": 0, "y": 0, "z": 0},
-        "current_attitude": {"roll": 0, "pitch": 0, "yaw": 0}
-    }
+    except HardwareNotAvailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except CommandExecutionError as e:
+        raise HTTPException(status_code=500, detail=str(e))
