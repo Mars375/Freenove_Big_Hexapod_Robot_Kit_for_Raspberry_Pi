@@ -117,3 +117,38 @@ Original repository: https://github.com/Freenove/Freenove_Big_Hexapod_Robot_Kit_
 - Complete OpenAPI documentation
 - CORS configured for all endpoints
 
+
+## [2.2.0] - 2026-01-13
+
+### 🎉 Phase 3 Complete - Intelligence & Advanced Features
+
+#### Added
+- **Robot Controller Core**: Unified TCP communication and state management
+- **WebSocket Streaming**: Real-time video and sensor data streaming
+- **Obstacle Avoidance**: Intelligent autonomous navigation with 4-level distance analysis
+- **Object Detection**: YOLOv8 integration placeholder for computer vision
+- **QR Scanner**: QR code detection and decoding from camera feed
+
+#### Endpoints Added
+- GET /api/v1/ws/video - WebSocket video stream
+- GET /api/v1/ws/sensors - WebSocket sensor data
+- GET /api/v1/ws/test - WebSocket test page
+- GET /api/v1/advanced/obstacle-avoidance/analyze - Analyze obstacles
+- GET /api/v1/advanced/vision/detect - Detect objects
+- GET /api/v1/advanced/vision/scan-qr - Scan QR codes
+
+#### Modules Added
+- core/robot_controller.py - Main robot controller
+- features/autonomous/obstacle_avoidance.py - Autonomous navigation
+- features/vision/object_detection.py - Object detection
+- features/vision/qr_scanner.py - QR code scanner
+- api/routers/websocket.py - WebSocket endpoints
+- api/routers/advanced.py - Advanced features endpoints
+
+#### Tests
+- Added 10+ new unit tests
+- Tests for obstacle avoidance logic
+- Tests for vision modules
+- Tests for robot controller
+- Total: 35+ tests
+
