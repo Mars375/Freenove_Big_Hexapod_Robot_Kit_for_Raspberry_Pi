@@ -140,23 +140,20 @@ class AllSensorsData(BaseModel):
 # ============= LED Models =============
 
 class LEDColorRequest(BaseModel):
-    """Request model for LED color."""
-    red: int = Field(ge=0, le=255, default=0, description="Red value")
-    green: int = Field(ge=0, le=255, default=0, description="Green value")
-    blue: int = Field(ge=0, le=255, default=0, description="Blue value")
+    """Request model for setting a solid color on the LED strip."""
+    r: int = Field(..., ge=0, le=255, description="Red component of the color")
+    g: int = Field(..., ge=0, le=255, description="Green component of the color")
+    b: int = Field(..., ge=0, le=255, description="Blue component of the color")
 
 
-class LEDModeRequest(BaseModel):
-    """Request model for LED mode."""
-    mode: LEDMode
-    color: Optional[LEDColorRequest] = None
+class LEDBrightnessRequest(BaseModel):
+    """Request model for setting the brightness of the LED strip."""
+    brightness: int = Field(..., ge=0, le=255, description="Brightness level from 0 to 255")
 
 
-class LEDResponse(BaseModel):
-    """Response model for LED commands."""
-    success: bool
-    mode: str
-    message: str
+class LEDRainbowRequest(BaseModel):
+    """Request model for starting a rainbow animation on the LED strip."""
+    iterations: int = Field(default=1, ge=1, description="Number of times to cycle the rainbow animation")
 
 
 # ============= Buzzer Models =============

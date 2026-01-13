@@ -2,14 +2,19 @@
 from typing import List, Tuple, Optional
 from enum import Enum
 import logging
+from core.config import settings
 
-try:
-    import spidev
-    import numpy as np
-    SPI_AVAILABLE = True
-except ImportError:
+if settings.MOCK_HARDWARE:
     SPI_AVAILABLE = False
     np = None
+else:
+    try:
+        import spidev
+        import numpy as np
+        SPI_AVAILABLE = True
+    except ImportError:
+        SPI_AVAILABLE = False
+        np = None
 
 logger = logging.getLogger(__name__)
 

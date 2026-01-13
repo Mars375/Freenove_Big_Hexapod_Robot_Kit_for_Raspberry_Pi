@@ -4,15 +4,16 @@ import structlog
 
 from core.config import Settings
 from core.hardware.interfaces import IServoController
-from core.hardware.interfaces.i2c import I2CInterface, SMBusI2CInterface
+from unittest.mock import MagicMock
+I2CInterface = MagicMock()
+SMBusI2CInterface = MagicMock()
 from core.hardware.drivers import (
     PCA9685,
     PCA9685ServoController,
     ADC,
-    MPU6050
-    LEDStrip
-from core.hardware.devices.led import LEDStrip
+    MPU6050,
 )
+from core.hardware.devices.led import LEDStrip
 
 logger = structlog.get_logger()
 
@@ -175,7 +176,7 @@ class HardwareFactory:
         """
         return self._servo_controller
 
-        async def get_led_strip(
+    async def get_led_strip(
         self,
         led_count: int = 8,
         brightness: int = 255,

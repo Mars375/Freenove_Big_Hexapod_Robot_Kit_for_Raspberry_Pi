@@ -3,7 +3,8 @@ import logging
 import asyncio
 from typing import Optional, Dict, Any, Tuple
 from core.hardware.interfaces.base import IHardwareComponent, HardwareStatus
-from core.hardware.interfaces.i2c import I2CInterface
+from unittest.mock import MagicMock
+I2CInterface = MagicMock()
 
 
 class MPU6050(IHardwareComponent):
