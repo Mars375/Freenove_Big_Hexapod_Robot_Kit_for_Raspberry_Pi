@@ -10,6 +10,8 @@ from core.hardware.drivers import (
     PCA9685ServoController,
     ADC,
     MPU6050
+    LEDStrip
+from core.hardware.devices.led import LEDStrip
 )
 
 logger = structlog.get_logger()
@@ -46,6 +48,9 @@ class HardwareFactory:
         
         # Contrôleurs haut niveau
         self._servo_controller: Optional[IServoController] = None
+                
+        # Devices
+        self._led_strip: Optional[LEDStrip] = None
         
         logger.info("hardware_factory.created")
     
@@ -169,6 +174,42 @@ class HardwareFactory:
             Contrôleur de servos existant ou None si non créé
         """
         return self._servo_controller
+
+        async def get_led_strip(
+        self,
+        led_count: int = 8,
+        brightness: int = 255,
+        bus: int = 0,
+        device: int = 0
+    ) -> LEDStrip:
+        """Récupère ou crée le device LED strip.
+        
+        Args:
+            led_count: Nombre de LEDs (défaut 8)
+            brightness: Luminosité initiale 0-255 (défaut 255)
+            bus: Bus SPI (défaut 0)
+            device: Device SPI (défaut 0)
+            
+        Returns:
+            Device LED strip initialisé
+        """
+        if self._led_strip is None:
+            logger.info(
+                "hardware_factory.creating_led_strip",
+                led_count=led_count,
+                brightness=brightness,
+                bus=bus,
+                device=device
+            )
+            self._led_strip = LEDStrip(
+                led_count=led_count,
+                brightness=brightness,
+                bus=bus,
+                device=device
+            )
+            await self._led_strip.initialize()
+        
+        return self._led_strip
     
     async def cleanup_all(self):
         """Nettoyage de toutes les ressources hardware."""
@@ -182,6 +223,17 @@ class HardwareFactory:
             except Exception as e:
                 logger.error(
                     "hardware_factory.servo_cleanup_failed",
+                    error=str(e)
+                )
+
+                # Nettoyer les devices
+        if self._led_strip:
+            try:
+                await self._led_strip.cleanup()
+                self._led_strip = None
+            except Exception as e:
+                logger.error(
+                    "hardware_factory.led_cleanup_failed",
                     error=str(e)
                 )
         
