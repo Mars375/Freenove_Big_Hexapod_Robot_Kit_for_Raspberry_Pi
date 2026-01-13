@@ -1,6 +1,7 @@
-from core.hardware.interfaces.base import IHardwareComponent, HardwareStatus
+"""Hardware abstraction interfaces"""
+
+from .servo_controller import IServoController
 
 __all__ = [
-    "IHardwareComponent",
-    "HardwareStatus"
+    "IServoController",
 ]
