@@ -21,6 +21,10 @@ def test_client() -> Generator[TestClient, None, None]:
     Yields:
         Configured test client
     """
+    # Set mock hardware to true for testing
+    from core.config import settings
+    settings.MOCK_HARDWARE = True
+
     from api.main import app
     
     with TestClient(app) as client:
