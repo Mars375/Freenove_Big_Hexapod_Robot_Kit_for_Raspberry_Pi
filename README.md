@@ -212,3 +212,44 @@ Ce projet est sous licence CC BY-NC-SA 3.0.
 ---
 
 **Made with ❤️ for robotics and SRE**
+
+---
+
+## 🚀 Nouveautés v2.2 (Phase 3)
+
+### ✨ Intelligence & Features Avancées
+
+#### 🤖 Robot Controller
+- Gestion unifiée de la communication TCP
+- État du robot en temps réel
+- Singleton pattern pour accès global
+
+#### 📡 WebSocket Streaming
+- GET /api/v1/ws/video - Streaming vidéo temps réel
+- GET /api/v1/ws/sensors - Streaming données capteurs
+- GET /api/v1/ws/test - Page de test WebSocket
+
+#### 🧭 Navigation Autonome
+- Évitement d'obstacles intelligent
+- 4 niveaux de distance (safe, warning, unsafe, critical)
+- Suggestions de manœuvres automatiques
+- GET /api/v1/advanced/obstacle-avoidance/analyze?distance=X
+
+#### 👁️ Computer Vision
+- Intégration YOLOv8 (placeholder)
+- Détection d'objets en temps réel
+- GET /api/v1/advanced/vision/detect
+
+#### 📱 QR Code Scanner
+- Scanner QR codes depuis la caméra
+- Décodage automatique
+- GET /api/v1/advanced/vision/scan-qr
+
+### 📊 Statistiques Phase 3
+
+- 3 nouveaux endpoints WebSocket
+- 3 endpoints advanced features
+- 1 robot controller core
+- 3 modules intelligence (obstacle, vision, qr)
+- 10+ nouveaux tests
+
