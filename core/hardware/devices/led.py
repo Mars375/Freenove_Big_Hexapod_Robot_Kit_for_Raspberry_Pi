@@ -1,148 +1,255 @@
+"""LED Device Layer using SPI-based WS281X driver."""
 import logging
 from typing import Optional, Dict, Any, Tuple
 from core.hardware.interfaces.base import IHardwareComponent, HardwareStatus
+from core.hardware.drivers.led import LEDController, ColorSequence, LedMode
 
-try:
-    from rpi_ws281x import PixelStrip, Color
-    LED_AVAILABLE = True
-except ImportError:
-    LED_AVAILABLE = False
+logger = logging.getLogger(__name__)
 
 
 class LEDStrip(IHardwareComponent):
-    """Contrôleur pour bande LED WS281x (NeoPixel)"""
+    """LED strip device using SPI-based WS281X driver.
     
-    def __init__(self, led_count: int = 8, led_pin: int = 18, 
-                 led_freq_hz: int = 800000, led_dma: int = 10,
-                 led_brightness: int = 255, led_invert: bool = False,
-                 led_channel: int = 0):
+    This device wraps the low-level LEDController driver to provide
+    a high-level interface for controlling LED strips on the hexapod.
+    
+    Args:
+        led_count: Number of LEDs in the strip (default: 8)
+        brightness: Initial brightness 0-255 (default: 255)
+        sequence: Color sequence type (default: GRB for WS2812)
+        bus: SPI bus number (default: 0)
+        device: SPI device number (default: 0)
+    """
+    
+    def __init__(
+        self,
+        led_count: int = 8,
+        brightness: int = 255,
+        sequence: ColorSequence = ColorSequence.GRB,
+        bus: int = 0,
+        device: int = 0
+    ):
         self.led_count = led_count
-        self.led_pin = led_pin
-        self.led_freq_hz = led_freq_hz
-        self.led_dma = led_dma
-        self.led_brightness = led_brightness
-        self.led_invert = led_invert
-        self.led_channel = led_channel
+        self.brightness = brightness
+        self.sequence = sequence
+        self.bus = bus
+        self.device = device
         
-        self._strip: Optional[PixelStrip] = None
-        self.logger = logging.getLogger(__name__)
+        self._driver: Optional[LEDController] = None
         self._status = HardwareStatus.UNINITIALIZED
         self._current_color: Tuple[int, int, int] = (0, 0, 0)
+        self._current_mode = LedMode.OFF
+        
+        logger.info(
+            f"LEDStrip initialized with {led_count} LEDs, "
+            f"brightness={brightness}, sequence={sequence.value}"
+        )
     
     async def initialize(self) -> bool:
-        if not LED_AVAILABLE:
-            self.logger.error("rpi_ws281x not available")
-            self._status = HardwareStatus.ERROR
-            return False
+        """Initialize the LED strip.
         
+        Returns:
+            bool: True if initialization successful
+        """
         try:
             self._status = HardwareStatus.INITIALIZING
+            logger.info("Initializing LED strip...")
             
-            self._strip = PixelStrip(
-                self.led_count,
-                self.led_pin,
-                self.led_freq_hz,
-                self.led_dma,
-                self.led_invert,
-                self.led_brightness,
-                self.led_channel
+            # Create the driver
+            self._driver = LEDController(
+                led_count=self.led_count,
+                brightness=self.brightness,
+                sequence=self.sequence,
+                bus=self.bus,
+                device=self.device
             )
             
-            self._strip.begin()
+            # Check if driver is available
+            if not self._driver.is_available():
+                logger.warning("LED driver in mock mode (SPI not available)")
+                self._status = HardwareStatus.READY  # Still ready, just in mock mode
+            else:
+                self._status = HardwareStatus.READY
+                logger.info("LED strip initialized successfully")
             
-            # Turn off all LEDs
-            self.clear()
+            # Turn off all LEDs initially
+            self._driver.off()
             
-            self._status = HardwareStatus.READY
-            self.logger.info(f"LED strip initialized ({self.led_count} LEDs on pin {self.led_pin})")
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to initialize LED strip: {e}")
+            logger.error(f"Failed to initialize LED strip: {e}", exc_info=True)
             self._status = HardwareStatus.ERROR
             return False
     
     async def cleanup(self) -> None:
+        """Clean up LED strip resources."""
         try:
-            self.clear()
-            self._strip = None
+            if self._driver:
+                self._driver.close()
+                logger.info("LED strip cleaned up")
             self._status = HardwareStatus.DISCONNECTED
         except Exception as e:
-            self.logger.error(f"Error during cleanup: {e}")
+            logger.error(f"Error during LED cleanup: {e}", exc_info=True)
     
     def set_color(self, r: int, g: int, b: int) -> bool:
+        """Set all LEDs to a single color.
+        
+        Args:
+            r: Red value (0-255)
+            g: Green value (0-255)
+            b: Blue value (0-255)
+            
+        Returns:
+            bool: True if successful
+        """
         if not self.is_available():
+            logger.warning("Cannot set color: LED strip not available")
             return False
         
         try:
-            color = Color(r, g, b)
-            for i in range(self.led_count):
-                self._strip.setPixelColor(i, color)
-            self._strip.show()
+            self._driver.set_all(r, g, b)
             self._current_color = (r, g, b)
+            self._current_mode = LedMode.SOLID
             return True
         except Exception as e:
-            self.logger.error(f"Failed to set LED color: {e}")
+            logger.error(f"Failed to set LED color: {e}")
             return False
     
     def set_pixel(self, pixel: int, r: int, g: int, b: int) -> bool:
-        if not self.is_available() or not (0 <= pixel < self.led_count):
+        """Set a specific LED to a color.
+        
+        Args:
+            pixel: LED index (0-based)
+            r: Red value (0-255)
+            g: Green value (0-255)
+            b: Blue value (0-255)
+            
+        Returns:
+            bool: True if successful
+        """
+        if not self.is_available():
+            logger.warning("Cannot set pixel: LED strip not available")
             return False
         
         try:
-            self._strip.setPixelColor(pixel, Color(r, g, b))
-            self._strip.show()
+            self._driver.set_color(r, g, b, pixel)
+            self._driver.show()
             return True
         except Exception as e:
-            self.logger.error(f"Failed to set pixel {pixel}: {e}")
+            logger.error(f"Failed to set pixel {pixel}: {e}")
             return False
     
-    def clear(self) -> bool:
-        return self.set_color(0, 0, 0)
-    
-    def rainbow_cycle(self, wait_ms: int = 20, iterations: int = 1) -> bool:
+    def set_brightness(self, brightness: int) -> bool:
+        """Set overall brightness.
+        
+        Args:
+            brightness: Brightness value (0-255)
+            
+        Returns:
+            bool: True if successful
+        """
         if not self.is_available():
+            logger.warning("Cannot set brightness: LED strip not available")
+            return False
+        
+        try:
+            self._driver.set_brightness(brightness)
+            self._driver.show()
+            self.brightness = brightness
+            return True
+        except Exception as e:
+            logger.error(f"Failed to set brightness: {e}")
+            return False
+    
+    def rainbow_cycle(self, iterations: int = 1) -> bool:
+        """Run rainbow cycle animation.
+        
+        Args:
+            iterations: Number of cycles to run
+            
+        Returns:
+            bool: True if successful
+        """
+        if not self.is_available():
+            logger.warning("Cannot run rainbow: LED strip not available")
             return False
         
         try:
             import time
             for j in range(256 * iterations):
                 for i in range(self.led_count):
-                    pixel_index = (i * 256 // self.led_count) + j
-                    color = self._wheel(pixel_index & 255)
-                    self._strip.setPixelColor(i, color)
-                self._strip.show()
-                time.sleep(wait_ms / 1000.0)
+                    color = self._driver.wheel(
+                        (i * 256 // self.led_count + j) % 256
+                    )
+                    self._driver.set_color(*color, i)
+                self._driver.show()
+                time.sleep(0.002)
+            
+            self._current_mode = LedMode.RAINBOW
             return True
         except Exception as e:
-            self.logger.error(f"Failed to run rainbow cycle: {e}")
+            logger.error(f"Failed to run rainbow cycle: {e}")
             return False
     
-    def _wheel(self, pos: int) -> int:
-        if pos < 85:
-            return Color(pos * 3, 255 - pos * 3, 0)
-        elif pos < 170:
-            pos -= 85
-            return Color(255 - pos * 3, 0, pos * 3)
-        else:
-            pos -= 170
-            return Color(0, pos * 3, 255 - pos * 3)
+    def off(self) -> bool:
+        """Turn off all LEDs.
+        
+        Returns:
+            bool: True if successful
+        """
+        if not self.is_available():
+            logger.warning("Cannot turn off: LED strip not available")
+            return False
+        
+        try:
+            self._driver.off()
+            self._current_color = (0, 0, 0)
+            self._current_mode = LedMode.OFF
+            return True
+        except Exception as e:
+            logger.error(f"Failed to turn off LEDs: {e}")
+            return False
     
     def is_available(self) -> bool:
-        return LED_AVAILABLE and self._status == HardwareStatus.READY
+        """Check if LED strip is available.
+        
+        Returns:
+            bool: True if ready to use
+        """
+        return (
+            self._status == HardwareStatus.READY and
+            self._driver is not None
+        )
     
     def get_status(self) -> Dict[str, Any]:
+        """Get current LED strip status.
+        
+        Returns:
+            Dict containing status information
+        """
         return {
             "type": "led_strip",
             "led_count": self.led_count,
-            "pin": self.led_pin,
+            "brightness": self.brightness,
+            "sequence": self.sequence.value,
+            "bus": self.bus,
+            "device": self.device,
             "status": self._status.value,
             "available": self.is_available(),
-            "current_color": self._current_color
+            "current_color": self._current_color,
+            "current_mode": self._current_mode.value,
+            "mock_mode": self._driver is not None and self._driver._mock_mode
         }
     
     def get_health(self) -> Dict[str, Any]:
+        """Get LED strip health status.
+        
+        Returns:
+            Dict containing health information
+        """
         return {
             "healthy": self.is_available(),
-            "status": self._status.value
+            "status": self._status.value,
+            "driver_available": self._driver.is_available() if self._driver else False
         }
