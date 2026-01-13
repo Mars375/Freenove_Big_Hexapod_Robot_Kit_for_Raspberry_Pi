@@ -46,11 +46,27 @@ class MoveRequest(BaseModel):
         return v
 
 
+class MoveCommand(BaseModel):
+    """Command model for robot movement."""
+    mode: str = Field(default="motion", description="Movement mode")
+    x: int = Field(ge=-35, le=35, default=0, description="X axis step length")
+    y: int = Field(ge=-35, le=35, default=0, description="Y axis step length")
+    speed: int = Field(ge=2, le=10, default=5, description="Movement speed")
+    angle: int = Field(ge=-10, le=10, default=0, description="Rotation angle")
+
+
 class AttitudeRequest(BaseModel):
     """Request model for robot attitude control."""
     roll: int = Field(ge=-15, le=15, default=0, description="Roll angle")
     pitch: int = Field(ge=-15, le=15, default=0, description="Pitch angle")
     yaw: int = Field(ge=-15, le=15, default=0, description="Yaw angle")
+
+
+class AttitudeCommand(BaseModel):
+    """Command model for robot attitude control."""
+    roll: float = Field(ge=-15, le=15, default=0, description="Roll angle")
+    pitch: float = Field(ge=-15, le=15, default=0, description="Pitch angle")
+    yaw: float = Field(ge=-15, le=15, default=0, description="Yaw angle")
 
 
 class PositionRequest(BaseModel):
@@ -145,17 +161,11 @@ class LEDResponse(BaseModel):
 
 # ============= Buzzer Models =============
 
-class BuzzerRequest(BaseModel):
-    """Request model for buzzer control."""
-    enabled: bool = Field(description="Turn buzzer on or off")
-    duration: Optional[float] = Field(default=None, ge=0.1, le=10.0, description="Beep duration in seconds")
-
-
-class BuzzerResponse(BaseModel):
-    """Response model for buzzer commands."""
-    success: bool
-    enabled: bool
-    message: str
+class BuzzerCommand(BaseModel):
+    """Command to control buzzer"""
+    frequency: int = Field(..., ge=100, le=5000, description="Buzzer frequency in Hz")
+    duration: float = Field(..., ge=0.1, le=5.0, description="Buzzer duration in seconds")
+    enabled: bool = Field(default=True, description="Enable buzzer beep")
 
 
 # ============= System Models =============
@@ -175,4 +185,10 @@ class CommandResponse(BaseModel):
     success: bool
     message: str
     data: Optional[dict] = None
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    command: Optional[str] = None
+    mode: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
+# ============= Aliases for Compatibility =============
+StandardResponse = CommandResponse  # Alias for backward compatibility

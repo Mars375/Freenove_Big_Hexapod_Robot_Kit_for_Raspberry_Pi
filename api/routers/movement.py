@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from api.models import MoveCommand, AttitudeCommand, StandardResponse
-from core.robot_controller import get_robot_controller
+from core.robot_controller import get_robot_controller, initialize_robot
 from core.exceptions import HardwareNotAvailableError, CommandExecutionError
 import structlog
 
@@ -15,7 +15,7 @@ async def move_robot(command: MoveCommand):
                 speed=command.speed, angle=command.angle)
     
     try:
-        robot = get_robot_controller()
+        robot = await initialize_robot()
         await robot.movement.move(
             mode=command.mode,
             x=command.x,
@@ -42,7 +42,7 @@ async def set_attitude(command: AttitudeCommand):
     logger.info("movement.attitude", roll=command.roll, pitch=command.pitch, yaw=command.yaw)
     
     try:
-        robot = get_robot_controller()
+        robot = await initialize_robot()
         await robot.movement.set_attitude(
             roll=command.roll,
             pitch=command.pitch,
@@ -71,7 +71,7 @@ async def stop_robot():
     logger.info("movement.stop")
     
     try:
-        robot = get_robot_controller()
+        robot = await initialize_robot()
         await robot.movement.stop()
         
         return StandardResponse(

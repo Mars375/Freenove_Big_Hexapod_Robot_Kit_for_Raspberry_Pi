@@ -1,50 +1,37 @@
-from fastapi import APIRouter, Depends, HTTPException
-from core.dependencies import get_hardware_factory
-from core.hardware.factory import HardwareFactory
-from api.models.buzzer import BuzzerCommand, BuzzerResponse
+from fastapi import APIRouter, HTTPException
+from api.models import BuzzerCommand, StandardResponse
+from core.robot_controller import get_robot_controller
+from core.exceptions import HardwareNotAvailableError, CommandExecutionError
+import structlog
 
-router = APIRouter(prefix="/buzzer", tags=["buzzer"])
-
-
-@router.post("/beep", response_model=BuzzerResponse)
-async def beep(
-    command: BuzzerCommand,
-    hardware: HardwareFactory = Depends(get_hardware_factory)
-) -> BuzzerResponse:
-    buzzer = hardware.get_buzzer()
-    
-    if not buzzer or not buzzer.is_available():
-        raise HTTPException(status_code=503, detail="Buzzer not available")
-    
-    success = buzzer.beep(
-        frequency=command.frequency,
-        duration=command.duration
-    )
-    
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to beep")
-    
-    return BuzzerResponse(
-        success=True,
-        message=f"Beep at {command.frequency}Hz for {command.duration}s"
-    )
+router = APIRouter()
+logger = structlog.get_logger()
 
 
-@router.post("/stop", response_model=BuzzerResponse)
-async def stop_buzzer(
-    hardware: HardwareFactory = Depends(get_hardware_factory)
-) -> BuzzerResponse:
-    buzzer = hardware.get_buzzer()
+@router.post("/beep", response_model=StandardResponse)
+async def beep_buzzer(command: BuzzerCommand):
+    """Activate buzzer with specified frequency and duration"""
+    logger.info("buzzer.beep", frequency=command.frequency, duration=command.duration, enabled=command.enabled)
     
-    if not buzzer or not buzzer.is_available():
-        raise HTTPException(status_code=503, detail="Buzzer not available")
+    if not command.enabled:
+        return StandardResponse(
+            success=True,
+            message="Buzzer disabled by request"
+        )
     
-    success = buzzer.stop()
+    try:
+        robot = get_robot_controller()
+        await robot.buzzer.beep(
+            frequency=command.frequency,
+            duration=command.duration
+        )
+        
+        return StandardResponse(
+            success=True,
+            message=f"Buzzer activated: {command.frequency}Hz for {command.duration}s"
+        )
     
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to stop buzzer")
-    
-    return BuzzerResponse(
-        success=True,
-        message="Buzzer stopped"
-    )
+    except HardwareNotAvailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except CommandExecutionError as e:
+        raise HTTPException(status_code=500, detail=str(e))
