@@ -20,7 +20,7 @@ redis==5.0.1
 hiredis==2.3.2
 
 # Vision
-opencv-python==4.9.0
+opencv-python==4.9.0.80
 numpy==1.26.3
 
 # Development
