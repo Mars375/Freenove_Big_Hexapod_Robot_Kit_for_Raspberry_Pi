@@ -1,0 +1,57 @@
+[tool.poetry]
+name = "hexapod-robot"
+version = "2.0.0"
+description = "Freenove Big Hexapod Robot - Modernized & Orion-SRE Integrated"
+authors = ["Mars375 <your-email@example.com>"]
+readme = "README.md"
+license = "CC-BY-NC-SA-3.0"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.109.0"
+uvicorn = {extras = ["standard"], version = "^0.27.0"}
+pydantic = "^2.5.3"
+pydantic-settings = "^2.1.0"
+structlog = "^24.1.0"
+python-dotenv = "^1.0.0"
+aiofiles = "^23.2.1"
+httpx = "^0.26.0"
+prometheus-client = "^0.19.0"
+redis = "^5.0.1"
+hiredis = "^2.3.2"
+opencv-python = "^4.9.0.80"
+numpy = "^1.26.3"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.4"
+pytest-asyncio = "^0.23.3"
+pytest-cov = "^4.1.0"
+pytest-mock = "^3.12.0"
+black = "^24.1.1"
+ruff = "^0.1.14"
+mypy = "^1.8.0"
+pre-commit = "^3.6.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "-v --cov=. --cov-report=html --cov-report=term-missing"
