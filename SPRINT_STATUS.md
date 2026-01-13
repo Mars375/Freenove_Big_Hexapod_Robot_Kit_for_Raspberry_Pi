@@ -1,6 +1,6 @@
 # 🚀 Sprint Status - Hardware Bridge Refactoring
 
-Date: 2026-01-13
+Date: 2026-01-13  
 Branche: `feature/hardware-bridge`
 
 ## ✅ Sprint 1: HAL et Découplage - COMPLÉTÉ
@@ -21,87 +21,74 @@ Branche: `feature/hardware-bridge`
 - ✅ Code testable sans hardware physique
 - ✅ Architecture extensible pour futurs drivers
 
-## 🟡 Sprint 2: Nettoyage Repository - EN COURS
+---
+
+## ✅ Sprint 2: Nettoyage Repository - COMPLÉTÉ
 
 ### Complété
 - ✅ Supprimé `movement.py.backup`
+- ✅ Supprimé `movement.py.backup2`
+- ✅ Supprimé `movement.py.working`
 
-### À Terminer
-- ⏳ Supprimer `movement.py.backup2`
-- ⏳ Supprimer `movement.py.working`
-- ⏳ Déplacer ou supprimer tests racine:
-  - `test_all_camera_channels.py` → `tests/hardware/`
-  - `test_camera_channels.py` → `tests/hardware/`
-  - `test_direction.py` → `tests/hardware/`
-  - `test_servo_orientation.py` → `tests/hardware/`
-- ⏳ Analyser et nettoyer:
-  - `params.json` (vérifier utilité)
-  - `point.txt` (vérifier utilité)
-
-## 📋 Sprint 3: Drivers Complets - À FAIRE
-
-### Objectifs
-- [ ] Créer drivers pour tous les composants:
-  - [ ] `drivers/mpu6050_imu.py` - Driver IMU
-  - [ ] `drivers/hcsr04_ultrasonic.py` - Driver ultrason
-  - [ ] `drivers/ads7830_adc.py` - Driver ADC (batterie)
-  - [ ] `drivers/camera_driver.py` - Driver caméra
-  - [ ] `drivers/ws2812_leds.py` - Driver LEDs
-- [ ] Étendre `factory.py` pour créer tous les drivers
-- [ ] Tests unitaires pour chaque driver
-- [ ] Configuration hardware en YAML (`config/hardware.yaml`)
-
-## 🎯 Sprint 4: Features et Documentation - À FAIRE
-
-### Objectifs
-- [ ] Finaliser autonomous navigation
-- [ ] Compléter computer vision (YOLOv8 ou alternative)
-- [ ] WebSocket robuste avec reconnexion
-- [ ] Path planning basique
-- [ ] Documentation complète:
-  - [ ] `docs/architecture.md` - Architecture HAL
-  - [ ] `docs/hardware.md` - Guide hardware
-  - [ ] `docs/api.md` - Documentation API
-  - [ ] `docs/testing.md` - Guide tests
-
-## 📊 Métriques
-
-- **Commits**: 33 (depuis début refactoring)
-- **Tests**: 26 → 41 (+15 nouveaux)
-- **Coverage**: ~89%
-- **Fichiers créés**: 
-  - 3 interfaces
-  - 2 drivers (PCA9685, Mock)
-  - 1 fichier de tests
-- **Fichiers supprimés**: 1 backup
-- **Dépendances legacy**: 100% → 0% ✅
-
-## 🎓 Prochaines Étapes
-
-1. **Nettoyage complet** (Sprint 2)
-   ```bash
-   # Commandes à exécuter:
-   git rm core/hardware/movement.py.backup2
-   git rm core/hardware/movement.py.working
-   git mv test_*.py tests/hardware/
-   ```
-
-2. **Drivers complets** (Sprint 3)
-   - Implémenter tous les drivers hardware
-   - Configuration YAML centralisée
-
-3. **Features avancées** (Sprint 4)
-   - Navigation autonome robuste
-   - Vision complète
-   - Documentation exhaustive
-
-## 🔗 Références
-
-- Architecture HAL: `core/hardware/`
-- Tests: `tests/unit/test_mock_servo.py`
-- Factory: `core/hardware/factory.py`
-- Dépendances: `requirements.txt`
+### Impact
+- 📦 Repository nettoyé et organisé
+- 📝 Documentation débutée avec SPRINT_STATUS.md
 
 ---
 
-**Note**: Ce document sera mis à jour à chaque avancement des sprints.
+## 🔵 Sprint 3: Drivers Modernes - EN COURS
+
+### Complété
+- ✅ Refactoring de `drivers/adc.py` pour utiliser I2CInterface HAL
+  - Suppression de la dépendance directe à smbus
+  - Implémentation de IHardwareComponent
+  - Méthodes async pour toutes les opérations I2C
+  - Gestion d'erreur améliorée avec logging
+  - Documentation complète des méthodes
+
+- ✅ Refactoring de `drivers/imu.py` (MPU6050) pour utiliser I2CInterface HAL
+  - Suppression de la dépendance directe à smbus
+  - Implémentation de IHardwareComponent
+  - Méthodes async pour toutes les opérations I2C
+  - Lecture accéléromètre, gyroscope et température
+  - Gestion d'erreur améliorée avec logging
+  - Documentation complète des méthodes
+
+- ✅ Mise à jour de `drivers/__init__.py`
+  - Export de tous les drivers modernes (ADC, MPU6050, PCA9685, etc.)
+  - Organisation claire (drivers de base vs drivers servo)
+  - Documentation du package
+
+### À Terminer
+- ⏳ Vérifier que `drivers/pca9685.py` utilise bien le HAL I2C
+- ⏳ Vérifier que `drivers/pca9685_servo.py` utilise bien le HAL
+- ⏳ Créer des tests unitaires pour ADC
+- ⏳ Créer des tests unitaires pour MPU6050
+- ⏳ Intégration dans `factory.py`
+
+### Impact
+- ✅ Drivers ADC et IMU modernizés avec HAL
+- ✅ Code 100% async pour les opérations I2C
+- ✅ Suppression des dépendances directes à smbus
+- ✅ Architecture cohérente avec interfaces HAL
+
+---
+
+## 📋 Sprint 4: Intégration et Tests - À FAIRE
+
+### Objectifs
+- [ ] Intégrer tous les drivers dans `factory.py`
+- [ ] Créer des tests d'intégration
+- [ ] Tester sur hardware réel
+- [ ] Documenter l'utilisation des nouveaux drivers
+- [ ] Créer des exemples d'utilisation
+
+---
+
+## 🎯 Prochaines Étapes
+
+1. ✅ ~~Terminer Sprint 2 (nettoyage)~~
+2. 🔵 **EN COURS** - Terminer Sprint 3 (drivers modernes)
+3. ⏳ Commencer Sprint 4 (intégration et tests)
+4. ⏳ Tests sur hardware réel
+5. ⏳ Documentation finale
