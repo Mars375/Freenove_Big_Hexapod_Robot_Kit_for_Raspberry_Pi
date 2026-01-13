@@ -64,3 +64,56 @@ For migration from v1.x to v2.0:
 See git history for previous versions (original Freenove code).
 
 Original repository: https://github.com/Freenove/Freenove_Big_Hexapod_Robot_Kit_for_Raspberry_Pi
+
+## [2.1.0] - 2026-01-13
+
+### 🎉 Phase 2 Complete - Full REST API
+
+#### Added
+- **Movement Router**: 5 endpoints for robot locomotion control
+  - POST /api/v1/movement/move - Move robot with mode, speed, angle
+  - POST /api/v1/movement/stop - Emergency stop
+  - POST /api/v1/movement/attitude - Control roll, pitch, yaw
+  - POST /api/v1/movement/position - Control x, y, z position
+  - GET /api/v1/movement/status - Get movement state
+
+- **Sensors Router**: 4 endpoints for sensor data
+  - GET /api/v1/sensors/imu - IMU accelerometer and gyroscope
+  - GET /api/v1/sensors/ultrasonic - Distance measurement
+  - GET /api/v1/sensors/battery - Battery voltage and percentage
+  - GET /api/v1/sensors/all - Combined sensor data
+
+- **Camera Router**: 3 endpoints for camera control
+  - POST /api/v1/camera/rotate - Rotate camera horizontally/vertically
+  - GET /api/v1/camera/config - Get camera configuration
+  - POST /api/v1/camera/config - Update camera settings
+
+- **LEDs Router**: 2 endpoints for LED control
+  - POST /api/v1/leds/mode - Set LED mode (off/solid/chase/blink/breathing/rainbow)
+  - POST /api/v1/leds/color - Set RGB color
+
+- **Buzzer Router**: 1 endpoint for buzzer control
+  - POST /api/v1/buzzer/beep - Control buzzer on/off with duration
+
+- **Pydantic Models**: Complete request/response validation
+  - MoveRequest, AttitudeRequest, PositionRequest
+  - IMUData, UltrasonicData, BatteryData, AllSensorsData
+  - CameraRotateRequest, CameraConfigResponse
+  - LEDModeRequest, LEDColorRequest, LEDResponse
+  - BuzzerRequest, BuzzerResponse
+
+#### Changed
+- Root endpoint now includes links to all API endpoints
+- Datetime handling updated to use timezone-aware datetime.now(timezone.utc)
+
+#### Tests
+- Added 16 new integration tests for all routers
+- Total: 26 tests with 89% code coverage
+- All tests passing
+
+#### Technical Details
+- 15 new API endpoints
+- 5 routers with proper error handling
+- Complete OpenAPI documentation
+- CORS configured for all endpoints
+
