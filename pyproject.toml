@@ -2,7 +2,7 @@
 name = "hexapod-robot"
 version = "2.0.0"
 description = "Freenove Big Hexapod Robot - Modernized & Orion-SRE Integrated"
-authors = ["Mars375 <ton-email@example.com>"]
+authors = ["Mars375 <your-email@example.com>"]
 readme = "README.md"
 license = "CC-BY-NC-SA-3.0"
 
@@ -16,24 +16,11 @@ structlog = "^24.1.0"
 python-dotenv = "^1.0.0"
 aiofiles = "^23.2.1"
 httpx = "^0.26.0"
-
-# Prometheus metrics
 prometheus-client = "^0.19.0"
-
-# Redis pour cache/pub-sub
 redis = "^5.0.1"
 hiredis = "^2.3.2"
-
-# Hardware (Raspberry Pi)
-RPi.GPIO = {version = "^0.7.1", optional = true}
-picamera2 = {version = "^0.3.16", optional = true}
-
-# Vision & IA
 opencv-python = "^4.9.0.80"
 numpy = "^1.26.3"
-
-# Legacy dependencies (à migrer progressivement)
-PyQt5 = {version = "^5.15.10", optional = true}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.4"
@@ -44,10 +31,6 @@ black = "^24.1.1"
 ruff = "^0.1.14"
 mypy = "^1.8.0"
 pre-commit = "^3.6.0"
-
-[tool.poetry.extras]
-raspberry-pi = ["RPi.GPIO", "picamera2"]
-legacy-ui = ["PyQt5"]
 
 [build-system]
 requires = ["poetry-core"]
