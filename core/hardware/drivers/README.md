@@ -117,9 +117,62 @@ await imu.cleanup()
 - Adresse I2C par défaut: 0x68
 - Calibration automatique
 
-### 4. PCA9685ServoController (pca9685_servo.py)
+### 5. PCA9685ServoController (pca9685_servo.py)
 
 **Contrôleur haut niveau pour servomoteurs**
+
+
+### 4. LEDController (led.py)
+
+**Contrôleur LED WS281X via SPI**
+
+```python
+from core.hardware.drivers.led import LEDController, ColorSequence
+
+# Initialisation directe
+led = LEDController(
+    led_count=8,
+    brightness=255,
+    sequence=ColorSequence.GRB,  # WS2812
+    bus=0,
+    device=0
+)
+
+# Définir couleur de toutes les LEDs
+led.set_all(255, 0, 0)  # Rouge
+
+# Définir couleur d'une LED spécifique
+led.set_color(255, 255, 0, index=0)  # Jaune sur LED 0
+
+# Ajuster la luminosité
+led.set_brightness(128)  # 50% de luminosité
+
+# Effets de couleur
+color = led.wheel(128)  # Couleur arc-en-ciel
+led.set_all(*color)
+
+# Conversion HSV vers RGB
+r, g, b = led.hsv_to_rgb(h=180, s=100, v=100)  # Cyan
+led.set_all(r, g, b)
+
+# Éteindre
+led.off()
+
+# Cleanup
+led.close()
+```
+
+**Caractéristiques:**
+
+- 8 LEDs WS2812/WS2812B par défaut (configurable)
+- Communication via SPI (pas de bibliothèque PWM requise)
+- Support de multiples séquences de couleurs (RGB, GRB, BGR, etc.)
+- Contrôle de luminosité avec scaling automatique
+- Mode mock pour environnements sans SPI
+- Méthodes utilitaires: wheel(), hsv_to_rgb()
+- Fréquence SPI: 6.4MHz (bus 0) / 8MHz (autres)
+- Type hints complets et logging structuré
+
 
 ```python
 # Via la factory (recommandé)
