@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     imu_enabled: bool = Field(default=True, description="Enable IMU sensor")
     ultrasonic_enabled: bool = Field(default=True, description="Enable ultrasonic sensor")
     
+    # Mock hardware for testing in environments without real hardware
+    MOCK_HARDWARE: bool = Field(default=False, description="Mock hardware")
+
     @property
     def camera_width(self) -> int:
         """Extract camera width from resolution string."""

@@ -1,12 +1,17 @@
 import logging
 import time
 from typing import Dict, Any
+from core.config import settings
 from core.hardware.interfaces.base import IHardwareComponent, HardwareStatus
 
-try:
-    import RPi.GPIO as GPIO
-    GPIO_AVAILABLE = True
-except ImportError:
+if not settings.MOCK_HARDWARE:
+    try:
+        import RPi.GPIO as GPIO
+        GPIO_AVAILABLE = True
+    except ImportError:
+        GPIO_AVAILABLE = False
+else:
+    GPIO = None
     GPIO_AVAILABLE = False
 
 
