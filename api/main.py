@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from api.routers import movement
 from core.config import settings
 from core.logger import get_logger
 
@@ -56,11 +57,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     
-    # Include routers (will be added later)
-    # from api.routers import movement, camera, sensors
-    # app.include_router(movement.router, prefix="/api/v1/movement", tags=["movement"])
-    # app.include_router(camera.router, prefix="/api/v1/camera", tags=["camera"])
-    # app.include_router(sensors.router, prefix="/api/v1/sensors", tags=["sensors"])
+    # Include routers
+    app.include_router(movement.router, prefix="/api/v1/movement", tags=["movement"])
     
     return app
 
@@ -107,7 +105,6 @@ async def metrics() -> JSONResponse:
     
     Returns basic metrics for now, will be expanded later.
     """
-    # This will be replaced with proper prometheus_client metrics
     metrics_text = f"""# HELP robot_info Robot information
 # TYPE robot_info gauge
 robot_info{{name="{settings.robot_name}",version="{settings.app_version}"}} 1
