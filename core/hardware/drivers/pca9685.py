@@ -1,19 +1,15 @@
+"""Driver PCA9685 moderne utilisant le HAL."""
 import logging
-import time
-from typing import Optional
+import asyncio
+from typing import Optional, Dict, Any
 from core.hardware.interfaces.base import IHardwareComponent, HardwareStatus
-
-try:
-    import smbus
-    I2C_AVAILABLE = True
-except ImportError:
-    I2C_AVAILABLE = False
+from core.hardware.interfaces.i2c import I2CInterface
 
 
-class PCA9685:
-    """Driver pour le contrôleur PWM PCA9685 (16 canaux)"""
+class PCA9685(IHardwareComponent):
+    """Driver pour le contrôleur PWM PCA9685 (16 canaux) via HAL."""
     
-    # Registers
+    # Registres PCA9685
     MODE1 = 0x00
     MODE2 = 0x01
     SUBADR1 = 0x02
@@ -36,32 +32,34 @@ class PCA9685:
     INVRT = 0x10
     OUTDRV = 0x04
     
-    def __init__(self, address: int = 0x40, bus_number: int = 1, frequency: int = 50):
-        self.address = address
-        self.bus_number = bus_number
-        self.frequency = frequency
-        self._bus: Optional[smbus.SMBus] = None
+    def __init__(self, i2c: I2CInterface, address: int = 0x40, frequency: int = 50):
+        """
+        Initialise le driver PCA9685.
+        
+        Args:
+            i2c: Interface I2C HAL
+            address: Adresse I2C du PCA9685 (défaut 0x40)
+            frequency: Fréquence PWM en Hz (défaut 50Hz pour servos)
+        """
+        self._i2c = i2c
+        self._address = address
+        self._frequency = frequency
         self.logger = logging.getLogger(__name__)
         self._status = HardwareStatus.UNINITIALIZED
     
     async def initialize(self) -> bool:
-        if not I2C_AVAILABLE:
-            self.logger.error("smbus not available")
-            self._status = HardwareStatus.ERROR
-            return False
-        
+        """Initialise le driver PCA9685."""
         try:
             self._status = HardwareStatus.INITIALIZING
-            self._bus = smbus.SMBus(self.bus_number)
             
             # Reset
-            self._write_byte(self.MODE1, 0x00)
+            await self._i2c.write_byte_data(self._address, self.MODE1, 0x00)
             
             # Set frequency
-            self.set_pwm_freq(self.frequency)
+            await self._set_pwm_freq(self._frequency)
             
             self._status = HardwareStatus.READY
-            self.logger.info(f"PCA9685 initialized at 0x{self.address:02x}, {self.frequency}Hz")
+            self.logger.info(f"PCA9685 initialized at 0x{self._address:02x}, {self._frequency}Hz")
             return True
             
         except Exception as e:
@@ -70,68 +68,91 @@ class PCA9685:
             return False
     
     async def cleanup(self) -> None:
-        if self._bus:
-            try:
-                # Turn off all PWM channels
-                self.set_all_pwm(0, 0)
-                self._bus.close()
-            except Exception as e:
-                self.logger.error(f"Error during cleanup: {e}")
-            finally:
-                self._bus = None
-                self._status = HardwareStatus.DISCONNECTED
+        """Nettoyage du driver PCA9685."""
+        try:
+            # Turn off all PWM channels
+            await self.set_all_pwm(0, 0)
+        except Exception as e:
+            self.logger.error(f"Error during cleanup: {e}")
+        finally:
+            self._status = HardwareStatus.DISCONNECTED
+            self.logger.info("PCA9685 cleaned up")
     
-    def _write_byte(self, reg: int, value: int) -> None:
-        if self._bus:
-            self._bus.write_byte_data(self.address, reg, value)
-    
-    def _read_byte(self, reg: int) -> int:
-        if self._bus:
-            return self._bus.read_byte_data(self.address, reg)
-        return 0
-    
-    def set_pwm_freq(self, freq: int) -> None:
+    async def _set_pwm_freq(self, freq: int) -> None:
+        """
+        Configure la fréquence PWM.
+        
+        Args:
+            freq: Fréquence en Hz
+        """
         prescale_val = 25000000.0
         prescale_val /= 4096.0
         prescale_val /= float(freq)
         prescale_val -= 1.0
         prescale = int(prescale_val + 0.5)
         
-        old_mode = self._read_byte(self.MODE1)
+        old_mode = await self._i2c.read_byte_data(self._address, self.MODE1)
+        if old_mode is None:
+            raise RuntimeError("Failed to read MODE1 register")
+        
         new_mode = (old_mode & 0x7F) | self.SLEEP
-        self._write_byte(self.MODE1, new_mode)
-        self._write_byte(self.PRESCALE, prescale)
-        self._write_byte(self.MODE1, old_mode)
-        time.sleep(0.005)
-        self._write_byte(self.MODE1, old_mode | self.RESTART)
+        await self._i2c.write_byte_data(self._address, self.MODE1, new_mode)
+        await self._i2c.write_byte_data(self._address, self.PRESCALE, prescale)
+        await self._i2c.write_byte_data(self._address, self.MODE1, old_mode)
+        await asyncio.sleep(0.005)
+        await self._i2c.write_byte_data(self._address, self.MODE1, old_mode | self.RESTART)
     
-    def set_pwm(self, channel: int, on: int, off: int) -> None:
+    async def set_pwm(self, channel: int, on: int, off: int) -> None:
+        """
+        Configure un canal PWM.
+        
+        Args:
+            channel: Numéro du canal (0-15)
+            on: Valeur ON (0-4095)
+            off: Valeur OFF (0-4095)
+        """
         if not (0 <= channel < 16):
             raise ValueError(f"Channel must be 0-15, got {channel}")
         
-        self._write_byte(self.LED0_ON_L + 4 * channel, on & 0xFF)
-        self._write_byte(self.LED0_ON_H + 4 * channel, on >> 8)
-        self._write_byte(self.LED0_OFF_L + 4 * channel, off & 0xFF)
-        self._write_byte(self.LED0_OFF_H + 4 * channel, off >> 8)
+        await self._i2c.write_byte_data(self._address, self.LED0_ON_L + 4 * channel, on & 0xFF)
+        await self._i2c.write_byte_data(self._address, self.LED0_ON_H + 4 * channel, on >> 8)
+        await self._i2c.write_byte_data(self._address, self.LED0_OFF_L + 4 * channel, off & 0xFF)
+        await self._i2c.write_byte_data(self._address, self.LED0_OFF_H + 4 * channel, off >> 8)
     
-    def set_servo_pulse(self, channel: int, pulse: int) -> None:
-        pulse = int(pulse * (4096 / 20000.0))
-        self.set_pwm(channel, 0, pulse)
+    async def set_servo_pulse(self, channel: int, pulse: int) -> None:
+        """
+        Configure la durée d'impulsion d'un servo.
+        
+        Args:
+            channel: Numéro du canal (0-15)
+            pulse: Durée d'impulsion en microsecondes
+        """
+        pulse_value = int(pulse * (4096 / 20000.0))
+        await self.set_pwm(channel, 0, pulse_value)
     
-    def set_all_pwm(self, on: int, off: int) -> None:
-        self._write_byte(self.ALL_LED_ON_L, on & 0xFF)
-        self._write_byte(self.ALL_LED_ON_H, on >> 8)
-        self._write_byte(self.ALL_LED_OFF_L, off & 0xFF)
-        self._write_byte(self.ALL_LED_OFF_H, off >> 8)
+    async def set_all_pwm(self, on: int, off: int) -> None:
+        """
+        Configure tous les canaux PWM.
+        
+        Args:
+            on: Valeur ON (0-4095)
+            off: Valeur OFF (0-4095)
+        """
+        await self._i2c.write_byte_data(self._address, self.ALL_LED_ON_L, on & 0xFF)
+        await self._i2c.write_byte_data(self._address, self.ALL_LED_ON_H, on >> 8)
+        await self._i2c.write_byte_data(self._address, self.ALL_LED_OFF_L, off & 0xFF)
+        await self._i2c.write_byte_data(self._address, self.ALL_LED_OFF_H, off >> 8)
     
     def is_available(self) -> bool:
-        return I2C_AVAILABLE and self._status == HardwareStatus.READY
+        """Vérifie si le PCA9685 est disponible."""
+        return self._status == HardwareStatus.READY
     
-    def get_status(self) -> dict:
+    def get_status(self) -> Dict[str, Any]:
+        """Retourne le statut du PCA9685."""
         return {
             "type": "pca9685",
-            "address": f"0x{self.address:02x}",
-            "frequency": self.frequency,
+            "address": f"0x{self._address:02x}",
+            "frequency": self._frequency,
             "status": self._status.value,
             "available": self.is_available()
         }
