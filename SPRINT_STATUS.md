@@ -60,12 +60,11 @@ Branche: `feature/hardware-bridge`
   - Documentation du package
 
 ### À Terminer
-- ⏳ Vérifier que `drivers/pca9685.py` utilise bien le HAL I2C
-- ⏳ Vérifier que `drivers/pca9685_servo.py` utilise bien le HAL
-- ⏳ Créer des tests unitaires pour ADC
-- ⏳ Créer des tests unitaires pour MPU6050
+- ✅ Vérifié que `drivers/pca9685.py` utilise bien le HAL I2C
+- ✅ Refactorisé `drivers/pca9685_servo.py` pour utiliser le HAL
+- ✅ Créé des tests unitaires pour ADC (test_adc.py)
+- ✅ Créé des tests unitaires pour MPU6050 (test_imu.py)
 - ⏳ Intégration dans `factory.py`
-
 ### Impact
 - ✅ Drivers ADC et IMU modernizés avec HAL
 - ✅ Code 100% async pour les opérations I2C
