@@ -1,0 +1,83 @@
+# Robot Configuration
+robot:
+  name: "Hexapod-01"
+  version: "2.0.0"
+  
+  movement:
+    step_length:
+      min: -35
+      max: 35
+    speed:
+      min: 2
+      max: 10
+    angle:
+      min: -10
+      max: 10
+  
+  camera:
+    enabled: true
+    fps: 30
+    resolution:
+      width: 640
+      height: 480
+    rotation: 0
+  
+  sensors:
+    imu:
+      enabled: true
+      sample_rate: 100  # Hz
+    ultrasonic:
+      enabled: true
+      max_distance: 400  # cm
+    battery:
+      low_threshold: 20  # %
+      critical_threshold: 10  # %
+
+# Server Configuration
+server:
+  api:
+    host: "0.0.0.0"
+    port: 8000
+    workers: 4
+  video:
+    port: 8002
+    codec: "h264"
+    bitrate: 2000000
+  command:
+    port: 5002
+    max_connections: 10
+
+# Logging Configuration
+logging:
+  version: 1
+  level: INFO
+  format: json
+  handlers:
+    - console
+    - file
+  file:
+    path: "logs/robot.log"
+    max_bytes: 10485760  # 10MB
+    backup_count: 5
+
+# Orion Integration
+orion:
+  enabled: true
+  brain_url: "http://localhost:9000"
+  guardian:
+    enabled: true
+    health_check_interval: 30  # seconds
+  healer:
+    enabled: true
+    auto_recovery: true
+  metrics:
+    export_interval: 10  # seconds
+
+# Features
+features:
+  autonomous:
+    enabled: false
+  object_detection:
+    enabled: false
+  qr_scanner:
+    enabled: false
