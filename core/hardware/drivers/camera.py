@@ -99,23 +99,28 @@ class CameraDriver(IHardwareComponent):
         """Internal camera init using OpenCV."""
         # Force V4L2 backend which is more reliable on Pi
         self._camera = cv2.VideoCapture(0, cv2.CAP_V4L2)
-        if not self._camera.isOpened():
-            # Try without V4L2 just in case
-            self._camera = cv2.VideoCapture(0)
-            
         if self._camera.isOpened():
             self._camera.set(cv2.CAP_PROP_FRAME_WIDTH, self._resolution[0])
             self._camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self._resolution[1])
-            # Set MJPEG format which is more efficient and often required for Pi cameras in V4L2
+            # Set MJPEG format
             self._camera.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
             
             actual_w = self._camera.get(cv2.CAP_PROP_FRAME_WIDTH)
             actual_h = self._camera.get(cv2.CAP_PROP_FRAME_HEIGHT)
             logger.info("camera.cv2_opened", requested=self._resolution, actual=(actual_w, actual_h))
             
-            # Warm-up: discard first 5 frames
-            for _ in range(5):
-                self._camera.read()
+            # Warm-up: discard frames until SUCCESS or timeout
+            start_time = time.time()
+            warmup_success = False
+            while time.time() - start_time < 2.0:
+                ret, _ = self._camera.read()
+                if ret:
+                    warmup_success = True
+                    break
+                time.sleep(0.1)
+                
+            if not warmup_success:
+                logger.warning("camera.cv2_warmup_failed", msg="Camera opened but no frames captured during warmup")
         else:
             raise RuntimeError("Could not open OpenCV video capture on index 0")
 
