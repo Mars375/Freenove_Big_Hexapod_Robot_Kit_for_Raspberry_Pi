@@ -474,11 +474,12 @@ class MovementController:
             logger.info("movement.move", mode=mode, x=x, y=y, speed=speed, angle=angle)
             
             # Map mode to parameters
+            # Map mode to parameters
             params = {
-                "forward": (25, 0, 0),
-                "backward": (-25, 0, 0),
-                "left": (0, 25, 0),
-                "right": (0, -25, 0),
+                "forward": (0, 25, 0),    # Y is forward
+                "backward": (0, -25, 0),  # Y is backward
+                "left": (-25, 0, 0),      # X is lateral (negative left?) - verify direction
+                "right": (25, 0, 0),      # X is lateral
                 "turn_left": (0, 0, 15),
                 "turn_right": (0, 0, -15),
                 "custom": (x, y, angle),

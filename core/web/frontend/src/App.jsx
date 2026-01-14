@@ -209,11 +209,18 @@ const App = () => {
 
       {/* Central Cockpit */}
       <main className="cockpit">
-        <img 
-          src={connected ? "/api/v1/camera/video_feed" : "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=1200"} 
-          alt="HUD Feed" 
-          className="video-feed"
-        />
+        {cameraEnabled && connected ? (
+          <img 
+            src="/api/v1/camera/video_feed" 
+            alt="HUD Feed" 
+            className="video-feed"
+          />
+        ) : (
+          <div className="video-feed" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000', color: '#0ff', flexDirection: 'column'}}>
+             <div style={{fontSize: '2rem', marginBottom: '10px'}}>NO SIGNAL</div>
+             <div style={{fontSize: '0.8rem', opacity: 0.7}}>{connected ? "CAMERA DISABLED" : "SYSTEM OFFLINE"}</div>
+          </div>
+        )}
         <div className="hud-overlay">
           <div className="reticle"></div>
           
