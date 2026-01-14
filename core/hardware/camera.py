@@ -52,9 +52,8 @@ class CameraController:
             v_angle = 90 + vertical
             
             # Clamp values
-            # Clamp values
             h_angle = max(0, min(180, h_angle))
-            v_angle = max(50, min(135, v_angle)) # Min 50 per legacy "x" limit for Ch 0 (Vertical)
+            v_angle = max(0, min(180, v_angle)) # Full range per user request
             
             # Set servo angles 
             await self._servo.set_angle_async(self._horizontal_channel, h_angle)
