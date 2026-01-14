@@ -102,10 +102,7 @@ class SensorController:
                     accel = [0.1, 0.0, 9.8]
                     gyro = [0.0, 0.0, 0.0]
                     temp = 25.5
-            else:
-                accel = [0.1, 0.0, 9.8]
-                gyro = [0.0, 0.0, 0.0]
-                temp = 25.5
+
 
             return {
                 "accel_x": round(accel[0], 2),

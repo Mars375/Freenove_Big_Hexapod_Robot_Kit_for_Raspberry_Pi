@@ -41,8 +41,4 @@ class BuzzerController:
             logger.error("buzzer_controller.beep_failed", error=str(e))
             raise CommandExecutionError(f"Buzzer beep failed: {e}")
 
-            logger.info("buzzer_controller.beep", dur=duration)
-            return True
-        except Exception as e:
-            logger.error("buzzer_controller.beep_failed", error=str(e))
-            raise CommandExecutionError(f"Buzzer beep failed: {e}")
+
