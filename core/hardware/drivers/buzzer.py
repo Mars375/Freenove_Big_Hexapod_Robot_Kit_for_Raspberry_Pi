@@ -1,52 +1,52 @@
-"""Buzzer Driver using RPi.GPIO."""
+"""Buzzer Driver using gpiozero."""
 import asyncio
 import structlog
 try:
-    import RPi.GPIO as GPIO
+    from gpiozero import Buzzer as GpioBuzzer
+    HAS_GPIOZERO = True
 except ImportError:
-    GPIO = None
+    HAS_GPIOZERO = False
 
 logger = structlog.get_logger()
 
 class Buzzer:
-    """Driver pour buzzer actif/passif sur GPIO."""
+    """Driver pour buzzer actif sur GPIO."""
     
     def __init__(self, pin: int = 17):
         """Initialise le buzzer.
         
         Args:
-            pin: Numéro de pin BCM (défaut 17, à vérifier)
+            pin: Numéro de pin BCM (défaut 17)
         """
         self.pin = pin
+        self._buzzer = None
         self._available = False
         
     async def initialize(self):
-        """Initialise le GPIO."""
-        if GPIO:
+        """Initialise le buzzer via gpiozero."""
+        if HAS_GPIOZERO:
             try:
-                GPIO.setmode(GPIO.BCM)
-                GPIO.setup(self.pin, GPIO.OUT)
-                GPIO.output(self.pin, GPIO.LOW)
+                self._buzzer = GpioBuzzer(self.pin, active_high=True)
                 self._available = True
-                logger.info(f"Buzzer initialized on pin {self.pin}")
+                logger.info("buzzer.initialized", pin=self.pin)
             except Exception as e:
-                logger.error(f"Failed to init buzzer GPIO: {e}")
+                logger.error("buzzer.init_failed", error=str(e))
                 self._available = False
         else:
-            logger.warning("RPi.GPIO not found, buzzer disabled")
+            logger.warning("gpiozero not found, buzzer disabled")
             
     async def beep(self, duration: float):
         """Emet un bip."""
-        if not self._available:
+        if not self._available or not self._buzzer:
             return
             
         try:
-            GPIO.output(self.pin, GPIO.HIGH)
+            self._buzzer.on()
             await asyncio.sleep(duration)
-            GPIO.output(self.pin, GPIO.LOW)
+            self._buzzer.off()
         except Exception as e:
-            logger.error(f"Beep failed: {e}")
+            logger.error("buzzer.beep_failed", error=str(e))
             
     async def cleanup(self):
-        if self._available:
-            GPIO.cleanup(self.pin)
+        if self._buzzer:
+            self._buzzer.close()

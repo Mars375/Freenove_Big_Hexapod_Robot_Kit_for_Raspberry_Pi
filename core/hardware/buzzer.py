@@ -24,12 +24,12 @@ class BuzzerController:
     def is_available(self) -> bool:
         return self._initialized
 
-    async def beep(self, frequency: int, duration: float) -> bool:
+    async def beep(self, duration: float, frequency: int = 1000) -> bool:
         """Activate buzzer
         
         Args:
-            frequency: Ignored for active buzzer
             duration: Duration in seconds
+            frequency: Ignored for active buzzer
         """
         await self._ensure_hardware()
 
