@@ -314,6 +314,13 @@ const App = () => {
                <button className={`status-pill ${cameraEnabled ? 'online' : 'offline'}`} onClick={() => { setCameraEnabled(!cameraEnabled); sendCommand({cmd: 'camera_toggle', enabled: !cameraEnabled}); }} style={{cursor: 'pointer', fontSize: '0.6rem', flex: 1}}>CAM: {cameraEnabled ? 'ON' : 'OFF'}</button>
              </div>
              <button className={`status-pill ${faceEnabled ? 'online' : 'offline'}`} onClick={() => { setFaceEnabled(!faceEnabled); sendCommand({cmd: 'face', enabled: !faceEnabled}); }} style={{cursor: 'pointer', fontSize: '0.6rem', width: '100%'}}>RECON. FACIALE: {faceEnabled ? 'ON' : 'OFF'}</button>
+             <button 
+                className="status-pill online" 
+                onClick={() => sendCommand({cmd: 'buzzer', enabled: true})} 
+                style={{cursor: 'pointer', fontSize: '0.6rem', width: '100%', marginTop: '5px', background: '#f1c40f', color: '#000'}}
+              >
+                BEEP (SIGNAL SONORE)
+              </button>
           </div>
         </section>
 
