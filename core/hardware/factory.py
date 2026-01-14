@@ -11,6 +11,7 @@ from core.hardware.drivers import (
     ADC,
     MPU6050,
     UltrasonicSensor,
+    CameraDriver,
 )
 from core.hardware.devices.led import LEDStrip
 
@@ -46,6 +47,7 @@ class HardwareFactory:
         self._adc: Optional[ADC] = None
         self._imu: Optional[MPU6050] = None
         self._ultrasonic: Optional[UltrasonicSensor] = None
+        self._camera: Optional[CameraDriver] = None
         
         # Contrôleurs haut niveau
         self._servo_controller: Optional[IServoController] = None
@@ -166,6 +168,36 @@ class HardwareFactory:
             await self._ultrasonic.initialize()
             
         return self._ultrasonic
+        
+    async def get_camera(
+        self,
+        resolution: tuple = (640, 480),
+        hflip: bool = False,
+        vflip: bool = False
+    ) -> CameraDriver:
+        """Récupère ou crée le driver Camera.
+        
+        Args:
+            resolution: Résolution caméra (défaut 640x480)
+            hflip: Miroir horizontal
+            vflip: Miroir vertical
+            
+        Returns:
+            Driver Camera initialisé
+        """
+        if self._camera is None:
+            logger.info(
+                "hardware_factory.creating_camera",
+                resolution=resolution
+            )
+            self._camera = CameraDriver(
+                resolution=resolution,
+                hflip=hflip,
+                vflip=vflip
+            )
+            await self._camera.initialize()
+            
+        return self._camera
     
     async def create_servo_controller(self) -> IServoController:
         """Crée le contrôleur de servos basé sur la configuration.
@@ -297,6 +329,16 @@ class HardwareFactory:
             except Exception as e:
                 logger.error(
                     "hardware_factory.ultrasonic_cleanup_failed",
+                    error=str(e)
+                )
+        
+        if self._camera:
+            try:
+                await self._camera.cleanup()
+                self._camera = None
+            except Exception as e:
+                logger.error(
+                    "hardware_factory.camera_cleanup_failed",
                     error=str(e)
                 )
         

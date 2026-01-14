@@ -447,6 +447,7 @@ class MovementController:
                 "right": (25, 0, 0),
                 "turn_left": (0, 0, 15),
                 "turn_right": (0, 0, -15),
+                "custom": (x, y, angle),
             }
             
             x_val, y_val, angle_val = params.get(mode, (0, 25, 0))

@@ -32,7 +32,7 @@ class UltrasonicSensor(IHardwareComponent):
         self._echo = echo_pin
         self._max_dist = max_distance
         self._sensor: Optional[DistanceSensor] = None
-        self._status = HardwareStatus.UNKNOWN
+        self._status = HardwareStatus.UNINITIALIZED
     
     async def initialize(self) -> bool:
         """Initialize the sensor hardware."""
@@ -107,7 +107,7 @@ class UltrasonicSensor(IHardwareComponent):
         if self._sensor:
             self._sensor.close()
             self._sensor = None
-        self._status = HardwareStatus.UNKNOWN
+        self._status = HardwareStatus.UNINITIALIZED
 
     def is_available(self) -> bool:
         return self._status == HardwareStatus.READY

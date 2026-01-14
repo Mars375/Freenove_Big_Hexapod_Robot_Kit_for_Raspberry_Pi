@@ -1,106 +1,163 @@
-"""Camera driver for Freenove Hexapod with picamera2.
-
-Based on Freenove camera.py analysis.
-"""
+"""Camera driver using Picamera2."""
+import asyncio
 import io
-from typing import Optional
+import time
+import structlog
+from typing import Optional, Dict, Any, Tuple
 from threading import Condition
 
 try:
-    from picamera2 import Picamera2
-    from picamera2.encoders import JpegEncoder, H264Encoder
-    from picamera2.outputs import FileOutput
+    from picamera2 import Picamera2, Preview
+    from picamera2.encoders import JpegEncoder
     from libcamera import Transform
-    PICAMERA2_AVAILABLE = True
+    HAS_PICAMERA = True
 except ImportError:
-    PICAMERA2_AVAILABLE = False
+    HAS_PICAMERA = False
 
+from core.hardware.interfaces.base import IHardwareComponent, HardwareStatus
+
+logger = structlog.get_logger()
 
 class StreamingOutput(io.BufferedIOBase):
-    """Streaming output for JPEG frames."""
-    
+    """Buffered output for camera streaming."""
     def __init__(self):
-        self.frame = None
+        self.frame = b""
         self.condition = Condition()
-    
+
     def write(self, buf: bytes) -> int:
         with self.condition:
             self.frame = buf
             self.condition.notify_all()
         return len(buf)
 
-
-class CameraController:
-    """Camera controller with streaming and recording."""
+class CameraDriver(IHardwareComponent):
+    """Modern driver for Raspberry Pi Camera using Picamera2."""
     
     def __init__(
         self,
-        preview_size: tuple = (640, 480),
-        stream_size: tuple = (400, 300),
+        resolution: Tuple[int, int] = (640, 480),
+        framerate: int = 30,
         hflip: bool = False,
         vflip: bool = False
     ):
-        self.preview_size = preview_size
-        self.stream_size = stream_size
-        self.streaming = False
+        self._resolution = resolution
+        self._framerate = framerate
+        self._hflip = hflip
+        self._vflip = vflip
         
-        if not PICAMERA2_AVAILABLE:
-            print("picamera2 not available, using mock camera")
-            self.camera = None
-            return
-        
+        self._camera: Optional[Any] = None
+        self._status = HardwareStatus.UNINITIALIZED
+        self._streaming_output = StreamingOutput()
+        self._streaming = False
+
+    async def initialize(self) -> bool:
+        """Initialize the camera."""
+        if not HAS_PICAMERA:
+            logger.error("camera.init_failed", error="picamera2 not installed")
+            self._status = HardwareStatus.ERROR
+            return False
+            
         try:
-            self.camera = Picamera2()
-            self.transform = Transform(hflip=1 if hflip else 0, vflip=1 if vflip else 0)
-            self.streaming_output = StreamingOutput()
+            self._status = HardwareStatus.INITIALIZING
+            
+            # Use run_in_executor for blocking camera init
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._init_camera)
+            
+            self._status = HardwareStatus.READY
+            logger.info("camera.initialized", resolution=self._resolution)
+            return True
+            
         except Exception as e:
-            print(f"Camera init error: {e}")
-            self.camera = None
-    
-    def start_preview(self):
-        """Start camera preview."""
-        if self.camera:
-            config = self.camera.create_preview_configuration(
-                main={"size": self.preview_size},
-                transform=self.transform
-            )
-            self.camera.configure(config)
-            self.camera.start()
-    
-    def start_streaming(self):
+            logger.error("camera.init_failed", error=str(e))
+            self._status = HardwareStatus.ERROR
+            return False
+
+    def _init_camera(self):
+        """Internal camera init."""
+        self._camera = Picamera2()
+        transform = Transform(hflip=1 if self._hflip else 0, vflip=1 if self._vflip else 0)
+        
+        # Configure for preview/capture
+        config = self._camera.create_preview_configuration(
+            main={"size": self._resolution},
+            transform=transform
+        )
+        self._camera.configure(config)
+        self._camera.start()
+
+    async def start_streaming(self):
         """Start JPEG streaming."""
-        if self.camera and not self.streaming:
-            config = self.camera.create_video_configuration(
-                main={"size": self.stream_size},
-                transform=self.transform
-            )
-            self.camera.configure(config)
-            encoder = JpegEncoder()
-            self.camera.start_recording(encoder, FileOutput(self.streaming_output))
-            self.streaming = True
-    
-    def get_frame(self) -> Optional[bytes]:
-        """Get current JPEG frame."""
-        if self.streaming:
-            with self.streaming_output.condition:
-                self.streaming_output.condition.wait()
-                return self.streaming_output.frame
-        return None
-    
-    def stop_streaming(self):
-        """Stop streaming."""
-        if self.camera and self.streaming:
-            self.camera.stop_recording()
-            self.streaming = False
-    
-    def capture_image(self, filename: str):
-        """Capture still image."""
-        if self.camera:
-            return self.camera.capture_file(filename)
-    
-    def close(self):
-        """Cleanup."""
-        if self.streaming:
-            self.stop_streaming()
-        if self.camera:
-            self.camera.close()
+        if not self._camera or self._streaming:
+            return
+            
+        try:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._start_recording)
+            self._streaming = True
+            logger.info("camera.streaming_started")
+        except Exception as e:
+            logger.error("camera.streaming_failed", error=str(e))
+
+    def _start_recording(self):
+        encoder = JpegEncoder()
+        from picamera2.outputs import FileOutput
+        output = FileOutput(self._streaming_output)
+        self._camera.start_recording(encoder, output)
+
+    async def stop_streaming(self):
+        """Stop JPEG streaming."""
+        if not self._camera or not self._streaming:
+            return
+            
+        try:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._camera.stop_recording)
+            self._streaming = False
+            logger.info("camera.streaming_stopped")
+        except Exception as e:
+            logger.error("camera.stop_streaming_failed", error=str(e))
+
+    async def get_frame(self) -> bytes:
+        """Get the latest frame as bytes."""
+        if not self._streaming:
+            await self.start_streaming()
+            
+        # This is a blocking wait on a condition variable
+        # Should be run in executor or replaced with an async-friendly condition
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._wait_for_frame)
+
+    def _wait_for_frame(self) -> bytes:
+        with self._streaming_output.condition:
+            self._streaming_output.condition.wait(timeout=1.0)
+            return self._streaming_output.frame
+
+    async def cleanup(self) -> None:
+        """Release camera resources."""
+        if self._camera:
+            if self._streaming:
+                await self.stop_streaming()
+            
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._camera.close)
+            self._camera = None
+            
+        self._status = HardwareStatus.UNINITIALIZED
+
+    def is_available(self) -> bool:
+        return self._status == HardwareStatus.READY and HAS_PICAMERA
+
+    def get_status(self) -> Dict[str, Any]:
+        return {
+            "status": self._status.value,
+            "resolution": self._resolution,
+            "streaming": self._streaming,
+            "has_picamera": HAS_PICAMERA
+        }
+
+    def get_health(self) -> Dict[str, Any]:
+        return {
+            "healthy": self._status == HardwareStatus.READY,
+            "error": None if self._status == HardwareStatus.READY else "Camera not ready"
+        }

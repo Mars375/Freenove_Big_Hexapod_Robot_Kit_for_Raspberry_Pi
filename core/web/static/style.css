@@ -1,0 +1,213 @@
+:root {
+    --bg-dark: #0a0b10;
+    --card-bg: rgba(25, 27, 38, 0.7);
+    --neon-blue: #00d2ff;
+    --neon-pink: #ff007f;
+    --text-main: #e0e0e0;
+    --text-dim: #999;
+    --danger: #ff4757;
+    --glass-border: rgba(255, 255, 255, 0.1);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: var(--bg-dark);
+    color: var(--text-main);
+    overflow: hidden;
+    height: 100vh;
+}
+
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    padding: 20px;
+    gap: 20px;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.neon-text {
+    color: var(--neon-blue);
+    text-shadow: 0 0 10px rgba(0, 210, 255, 0.5);
+    font-weight: 800;
+    letter-spacing: 2px;
+}
+
+.status-bar {
+    display: flex;
+    gap: 20px;
+}
+
+.status-item {
+    font-size: 0.85rem;
+}
+
+.status-item .label { color: var(--text-dim); }
+.status-item .value.disconnected { color: var(--danger); }
+.status-item .value.connected { color: #2ecc71; }
+
+/* Grid Layout */
+.grid-layout {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr;
+    grid-template-rows: 1.5fr 1fr;
+    gap: 20px;
+    flex: 1;
+}
+
+.card {
+    background: var(--card-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: transform 0.3s ease;
+}
+
+.card:hover {
+    border-color: rgba(0, 210, 255, 0.3);
+}
+
+.card-header {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 10px 20px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--glass-border);
+}
+
+/* Video Section */
+.video-container {
+    position: relative;
+    flex: 1;
+    background: #000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#video-feed {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.overlay {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+}
+
+.telemetry-pill {
+    background: rgba(0, 0, 0, 0.6);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    border: 1px solid var(--neon-blue);
+    color: var(--neon-blue);
+}
+
+/* Control Section */
+.joystick-grid {
+    display: flex;
+    justify-content: space-around;
+    padding: 20px;
+    flex: 1;
+}
+
+.joystick-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.joystick-base {
+    width: 150px;
+    height: 150px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 50%;
+    border: 2px dashed rgba(255, 255, 255, 0.1);
+}
+
+.button-row {
+    display: flex;
+    padding: 20px;
+    gap: 15px;
+}
+
+.btn {
+    flex: 1;
+    padding: 12px;
+    border-radius: 8px;
+    border: none;
+    font-weight: bold;
+    cursor: pointer;
+    transition: filter 0.2s;
+}
+
+.btn.primary { background: var(--neon-blue); color: #000; }
+.btn.danger { background: var(--danger); color: #fff; }
+.btn:hover { filter: brightness(1.2); }
+
+/* Attitude Section */
+.sliders {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.slider-group {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.slider-group label {
+    width: 60px;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+}
+
+.slider-group input {
+    flex: 1;
+    accent-color: var(--neon-blue);
+}
+
+/* Log Section */
+.log-output {
+    flex: 1;
+    padding: 15px;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.75rem;
+    overflow-y: auto;
+    color: #2ecc71;
+}
+
+.log-entry.system { color: var(--text-dim); }
+
+@media (max-width: 900px) {
+    .grid-layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto;
+        overflow-y: auto;
+    }
+}

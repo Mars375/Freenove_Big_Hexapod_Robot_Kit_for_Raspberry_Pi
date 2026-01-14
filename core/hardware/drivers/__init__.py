@@ -4,6 +4,7 @@
 from .adc import ADC
 from .imu import MPU6050
 from .ultrasonic import UltrasonicSensor
+from .camera import CameraDriver
 
 # Drivers servo
 from .pca9685 import PCA9685
@@ -20,4 +21,5 @@ __all__ = [
     "MockServoController",
     # Sensor drivers
     "UltrasonicSensor",
+    "CameraDriver",
 ]
