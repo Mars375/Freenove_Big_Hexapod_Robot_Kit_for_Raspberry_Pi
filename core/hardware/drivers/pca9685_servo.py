@@ -26,18 +26,21 @@ class PCA9685ServoController(IServoController):
     
     def __init__(
         self,
-        pca9685: PCA9685,
+        pca_low: PCA9685,
+        pca_high: PCA9685,
         min_pulse: int = 500,
         max_pulse: int = 2500
     ):
         """Initialise le contrôleur de servos.
         
         Args:
-            pca9685: Instance du driver PCA9685 configuré
+            pca_low: Driver PCA9685 pour canaux 0-15 (Address 0x41)
+            pca_high: Driver PCA9685 pour canaux 16-31 (Address 0x40)
             min_pulse: Largeur d'impulsion minimale en µs (défaut 500)
             max_pulse: Largeur d'impulsion maximale en µs (défaut 2500)
         """
-        self._pca = pca9685
+        self._pca_low = pca_low
+        self._pca_high = pca_high
         self._min_pulse = min_pulse
         self._max_pulse = max_pulse
         self._current_angles: Dict[int, int] = {}
@@ -48,15 +51,15 @@ class PCA9685ServoController(IServoController):
         )
     
     async def initialize(self) -> None:
-        """Initialise le contrôleur (le PCA9685 doit déjà être initialisé)."""
-        if not self._pca.is_available():
-            self.logger.warning("PCA9685 non disponible")
+        """Initialise le contrôleur (les PCA9685 doivent déjà être initialisés)."""
+        if not self._pca_low.is_available() or not self._pca_high.is_available():
+            self.logger.warning("Un ou plusieurs PCA9685 non disponibles")
         else:
-            self.logger.info("PCA9685ServoController prêt")
+            self.logger.info("PCA9685ServoController (Dual Board) prêt")
     
     def is_available(self) -> bool:
         """Vérifie si le contrôleur est disponible."""
-        return self._pca.is_available()
+        return self._pca_low.is_available() and self._pca_high.is_available()
     
     def _angle_to_pulse(self, angle: int) -> int:
         """Convertit un angle (0-180°) en largeur d'impulsion (µs).
@@ -90,7 +93,7 @@ class PCA9685ServoController(IServoController):
         """Définit l'angle d'un servo (méthode synchrone wrapper).
         
         Args:
-            channel: Numéro du canal (0-15)
+            channel: Numéro du canal (0-31)
             angle: Angle cible en degrés (0-180)
             
         Raises:
@@ -118,26 +121,34 @@ class PCA9685ServoController(IServoController):
     async def set_angle_async(self, channel: int, angle: int) -> None:
         """Définit l'angle d'un servo (version async).
         
+        Routes channels 0-15 to pca_low and 16-31 to pca_high.
+        
         Args:
-            channel: Numéro du canal (0-15)
+            channel: Numéro du canal (0-31)
             angle: Angle cible en degrés (0-180)
             
         Raises:
             ValueError: Si channel ou angle hors limites
             RuntimeError: Si PCA9685 non disponible
         """
-        if not self._pca.is_available():
+        if not self.is_available():
             raise RuntimeError("PCA9685 non disponible")
         
-        if not 0 <= channel < 16:
-            raise ValueError(f"Canal {channel} hors limites (0-15)")
+        if not 0 <= channel < 32:
+            raise ValueError(f"Canal {channel} hors limites (0-31)")
         
         if not 0 <= angle <= 180:
             raise ValueError(f"Angle {angle} hors limites (0-180)")
         
         try:
             pulse = self._angle_to_pulse(angle)
-            await self._pca.set_servo_pulse(channel, pulse)
+            
+            # Routing logic
+            if channel < 16:
+                await self._pca_low.set_servo_pulse(channel, pulse)
+            else:
+                await self._pca_high.set_servo_pulse(channel - 16, pulse)
+                
             self._current_angles[channel] = angle
             
             self.logger.debug(
@@ -224,18 +235,18 @@ class PCA9685ServoController(IServoController):
         Méthode avancée pour un contrôle fin.
         
         Args:
-            channel: Numéro du canal (0-15)
+            channel: Numéro du canal (0-31)
             pulse_width: Largeur d'impulsion en µs
             
         Raises:
             ValueError: Si valeurs hors limites
             RuntimeError: Si PCA9685 non disponible
         """
-        if not self._pca.is_available():
+        if not self.is_available():
             raise RuntimeError("PCA9685 non disponible")
         
-        if not 0 <= channel < 16:
-            raise ValueError(f"Canal {channel} hors limites (0-15)")
+        if not 0 <= channel < 32:
+            raise ValueError(f"Canal {channel} hors limites (0-31)")
         
         if not self._min_pulse <= pulse_width <= self._max_pulse:
             raise ValueError(
@@ -244,7 +255,10 @@ class PCA9685ServoController(IServoController):
             )
         
         try:
-            await self._pca.set_servo_pulse(channel, pulse_width)
+            if channel < 16:
+                await self._pca_low.set_servo_pulse(channel, pulse_width)
+            else:
+                await self._pca_high.set_servo_pulse(channel - 16, pulse_width)
             
             # Estimer l'angle pour le tracking
             angle = self._pulse_to_angle(pulse_width)
@@ -290,7 +304,7 @@ class PCA9685ServoController(IServoController):
         """Remet tous les servos en position neutre (90°) - version async."""
         self.logger.info("Reset de tous les servos à 90°")
         
-        for channel in range(16):
+        for channel in range(32):
             try:
                 await self.set_angle_async(channel, 90)
             except Exception as e:
@@ -301,10 +315,11 @@ class PCA9685ServoController(IServoController):
     def get_status(self) -> Dict[str, Any]:
         """Retourne le statut du contrôleur."""
         return {
-            "type": "pca9685_servo_controller",
+            "type": "pca9685_servo_controller_dual",
             "available": self.is_available(),
             "min_pulse": self._min_pulse,
             "max_pulse": self._max_pulse,
             "current_angles": dict(self._current_angles),
-            "pca9685_status": self._pca.get_status()
+            "pca_low_status": self._pca_low.get_status(),
+            "pca_high_status": self._pca_high.get_status()
         }

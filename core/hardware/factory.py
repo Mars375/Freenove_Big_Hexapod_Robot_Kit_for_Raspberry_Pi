@@ -76,17 +76,26 @@ class HardwareFactory:
         Returns:
             Driver PCA9685 initialisé
         """
-        if self._pca9685 is None:
-            logger.info(
-                "hardware_factory.creating_pca9685",
-                address=hex(address),
-                frequency=frequency
-            )
-            i2c = await self.get_i2c_interface()
-            self._pca9685 = PCA9685(i2c=i2c, address=address, frequency=frequency)
-            await self._pca9685.initialize()
+        # Initialize cache if needed (replaces single instance self._pca9685)
+        if not hasattr(self, "_pca_cache"):
+            self._pca_cache = {}
+            
+        # Check cache
+        cache_key = f"{address}_{frequency}"
+        if cache_key in self._pca_cache:
+            return self._pca_cache[cache_key]
+            
+        logger.info(
+            "hardware_factory.creating_pca9685",
+            address=hex(address),
+            frequency=frequency
+        )
+        i2c = await self.get_i2c_interface()
+        pca = PCA9685(i2c=i2c, address=address, frequency=frequency)
+        await pca.initialize()
         
-        return self._pca9685
+        self._pca_cache[cache_key] = pca
+        return pca
     
     async def get_adc(self, address: int = 0x48) -> ADC:
         """Récupère ou crée le driver ADC.
@@ -148,15 +157,19 @@ class HardwareFactory:
         if servo_type == "pca9685":
             logger.info(
                 "hardware_factory.creating_servo_controller",
-                type="pca9685",
-                channels=16
+                type="pca9685_dual",
+                channels=32
             )
-            # Récupérer le driver PCA9685 de base
-            pca9685 = await self.get_pca9685(address=0x40, frequency=50)
+            # Board 1: Channels 0-15 (Logiciel) -> Address 0x41
+            pca_low = await self.get_pca9685(address=0x41, frequency=50)
             
-            # Créer le contrôleur de servos qui utilise le driver
+            # Board 2: Channels 16-31 (Logiciel) -> Address 0x40
+            pca_high = await self.get_pca9685(address=0x40, frequency=50)
+            
+            # Créer le contrôleur de servos avec les deux boards
             self._servo_controller = PCA9685ServoController(
-                pca9685=pca9685,
+                pca_low=pca_low,
+                pca_high=pca_high,
                 min_pulse=500,
                 max_pulse=2500
             )

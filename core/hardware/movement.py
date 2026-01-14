@@ -86,14 +86,28 @@ class MovementController:
         
         self.legs = [
             # Right side (0, 1, 2)
-            Leg(0, [15, 14, 13], (137.1, 189.4), (0, 0), False),   # Front Right
-            Leg(1, [12, 11, 10], (225.0, 0.0), (0, 0), False),      # Middle Right
-            Leg(2, [9, 8, 7], (137.1, -189.4), (0, 0), False),      # Rear Right
+            # Leg 0 (Right Front): Servos 15, 14, 13 (Board 1 @ 0x41)
+            Leg(0, [15, 14, 13], (137.1, 189.4), (0, 0), False),
+            
+            # Leg 1 (Right Middle): Servos 12, 11, 10 (Board 1 @ 0x41)
+            Leg(1, [12, 11, 10], (225.0, 0.0), (0, 0), False),
+            
+            # Leg 2 (Right Rear): Servos 9, 8, 31 (Mixed: 9,8 @ 0x41, 31 @ 0x40)
+            # Board 1 channels 9,8. Board 0 channel 15 (mapped to 31 virtual)
+            Leg(2, [9, 8, 31], (137.1, -189.4), (0, 0), False),
             
             # Left side (3, 4, 5)  
-            Leg(3, [6, 5, 4], (-137.1, -189.4), (0, 0), True),      # Rear Left
-            Leg(4, [3, 2, 1], (-225.0, 0.0), (0, 0), True),         # Middle Left
-            Leg(5, [0, 31, 30], (-137.1, 189.4), (0, 0), True),     # Front Left
+            # Leg 3 (Left Rear): Servos 22, 23, 27 (Board 0 @ 0x40)
+            # Virtual IDs: 22 (=6+16), 23 (=7+16), 27 (=11+16)
+            Leg(3, [22, 23, 27], (-137.1, -189.4), (0, 0), True),
+            
+            # Leg 4 (Left Middle): Servos 19, 20, 21 (Board 0 @ 0x40)
+            # Virtual IDs: 19 (=3+16), 20 (=4+16), 21 (=5+16)
+            Leg(4, [19, 20, 21], (-225.0, 0.0), (0, 0), True),
+            
+            # Leg 5 (Left Front): Servos 16, 17, 18 (Board 0 @ 0x40)
+            # Virtual IDs: 16 (=0+16), 17 (=1+16), 18 (=2+16)
+            Leg(5, [16, 17, 18], (-137.1, 189.4), (0, 0), True),
         ]
         
         # Gait controller
