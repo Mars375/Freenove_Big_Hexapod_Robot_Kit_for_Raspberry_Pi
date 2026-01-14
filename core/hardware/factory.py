@@ -10,6 +10,7 @@ from core.hardware.drivers import (
     PCA9685ServoController,
     ADC,
     MPU6050,
+    UltrasonicSensor,
 )
 from core.hardware.devices.led import LEDStrip
 
@@ -44,6 +45,7 @@ class HardwareFactory:
         self._pca9685: Optional[PCA9685] = None
         self._adc: Optional[ADC] = None
         self._imu: Optional[MPU6050] = None
+        self._ultrasonic: Optional[UltrasonicSensor] = None
         
         # Contrôleurs haut niveau
         self._servo_controller: Optional[IServoController] = None
@@ -136,6 +138,34 @@ class HardwareFactory:
             await self._imu.initialize()
         
         return self._imu
+    
+    async def get_ultrasonic(
+        self,
+        trigger_pin: int = 27,
+        echo_pin: int = 22
+    ) -> UltrasonicSensor:
+        """Récupère ou crée le driver Ultrasonic.
+        
+        Args:
+            trigger_pin: Pin GPIO trigger (défaut 27)
+            echo_pin: Pin GPIO echo (défaut 22)
+            
+        Returns:
+            Driver Ultrasonic initialisé
+        """
+        if self._ultrasonic is None:
+            logger.info(
+                "hardware_factory.creating_ultrasonic",
+                trigger=trigger_pin,
+                echo=echo_pin
+            )
+            self._ultrasonic = UltrasonicSensor(
+                trigger_pin=trigger_pin,
+                echo_pin=echo_pin
+            )
+            await self._ultrasonic.initialize()
+            
+        return self._ultrasonic
     
     async def create_servo_controller(self) -> IServoController:
         """Crée le contrôleur de servos basé sur la configuration.
@@ -257,6 +287,16 @@ class HardwareFactory:
             except Exception as e:
                 logger.error(
                     "hardware_factory.imu_cleanup_failed",
+                    error=str(e)
+                )
+
+        if self._ultrasonic:
+            try:
+                await self._ultrasonic.cleanup()
+                self._ultrasonic = None
+            except Exception as e:
+                logger.error(
+                    "hardware_factory.ultrasonic_cleanup_failed",
                     error=str(e)
                 )
         

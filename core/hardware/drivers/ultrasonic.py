@@ -1,194 +1,129 @@
-"""
-HC-SR04 Ultrasonic distance sensor driver.
-"""
+"""Ultrasonic sensor driver using gpiozero."""
 import asyncio
-import time
-from typing import Optional
+from typing import Dict, Any, Optional
+import structlog
+from gpiozero import DistanceSensor, BadPinFactory
+from core.hardware.interfaces.base import IHardwareComponent, HardwareStatus
 
-try:
-    import RPi.GPIO as GPIO
-except (RuntimeError, ModuleNotFoundError):
-    GPIO = None
+logger = structlog.get_logger()
 
 
-class UltrasonicSensor:
+class UltrasonicSensor(IHardwareComponent):
+    """Driver for HC-SR04 ultrasonic distance sensor.
+    
+    Uses gpiozero for hardware abstraction.
+    Pins: Trigger=27, Echo=22 (default for Freenove Hexapod)
     """
-    HC-SR04 ultrasonic distance sensor.
-
-    Hardware:
-        - Trigger GPIO (output): sends 10µs pulse
-        - Echo GPIO (input): receives pulse duration
-        - Range: 2cm - 400cm
-        - Accuracy: ±3mm
-
-    Measurement:
-        1. Send 10µs trigger pulse
-        2. Wait for echo HIGH
-        3. Measure echo pulse width
-        4. Distance = (pulse_width * speed_of_sound) / 2
-
-    Speed of sound: 34300 cm/s at 20°C
-    Formula: distance_cm = (pulse_duration_s * 34300) / 2
-
-    Usage:
-        >>> sensor = UltrasonicSensor(trigger_pin=16, echo_pin=18)
-        >>> await sensor.initialize()
-        >>> distance = await sensor.measure_distance()
-        >>> print(f"Distance: {distance:.1f} cm")
-    """
-
-    SPEED_OF_SOUND = 34300  # cm/s at 20°C
-    TIMEOUT_SECONDS = 0.1  # 100ms timeout (max ~17m)
-    MIN_DISTANCE_CM = 2
-    MAX_DISTANCE_CM = 400
-
-    def __init__(self, trigger_pin: int = 16, echo_pin: int = 18):
-        """
-        Initialize ultrasonic sensor.
-
+    
+    def __init__(
+        self,
+        trigger_pin: int = 27,
+        echo_pin: int = 22,
+        max_distance: float = 3.0
+    ):
+        """Initialize ultrasonic sensor.
+        
         Args:
-            trigger_pin: GPIO pin for trigger (BCM mode)
-            echo_pin: GPIO pin for echo (BCM mode)
+            trigger_pin: GPIO pin for trigger pulse
+            echo_pin: GPIO pin for echo reception
+            max_distance: Maximum distance to measure in meters
         """
-        if GPIO is None:
-            raise RuntimeError("RPi.GPIO library not found. Cannot control hardware.")
-        self.trigger_pin = trigger_pin
-        self.echo_pin = echo_pin
-        self._initialized: bool = False
-
-    async def initialize(self) -> None:
-        """Initialize GPIO pins."""
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setup(self.trigger_pin, GPIO.OUT)
-        GPIO.setup(self.echo_pin, GPIO.IN)
-
-        # Ensure trigger is LOW
-        GPIO.output(self.trigger_pin, GPIO.LOW)
-        await asyncio.sleep(0.1)  # Settle time
-
-        self._initialized = True
-
-    async def measure_distance(self, samples: int = 1) -> Optional[float]:
-        """
-        Measure distance in centimeters.
-
-        Args:
-            samples: Number of samples to average (reduces noise)
-
-        Returns:
-            Distance in cm, or None if measurement failed
-
-        Raises:
-            RuntimeError: If not initialized
-        """
-        if not self._initialized:
-            raise RuntimeError("Ultrasonic sensor not initialized")
-
-        measurements = []
-
-        for _ in range(samples):
-            distance = await self._single_measurement()
-            if distance is not None:
-                measurements.append(distance)
-
-            # Small delay between samples
-            if samples > 1:
-                await asyncio.sleep(0.06)  # 60ms = min time between measurements
-
-        if not measurements:
-            return None
-
-        # Return average
-        return sum(measurements) / len(measurements)
-
-    async def _single_measurement(self) -> Optional[float]:
-        """
-        Perform single distance measurement.
-
-        Returns:
-            Distance in cm, or None if timeout/error
-        """
-        # Send 10µs trigger pulse
-        GPIO.output(self.trigger_pin, GPIO.HIGH)
-        await asyncio.sleep(0.00001)  # 10µs
-        GPIO.output(self.trigger_pin, GPIO.LOW)
-
-        # Wait for echo to go HIGH (with timeout)
-        start_time = time.time()
-        timeout_time = start_time + self.TIMEOUT_SECONDS
-
-        while GPIO.input(self.echo_pin) == GPIO.LOW:
-            if time.time() > timeout_time:
-                return None  # Timeout
-            await asyncio.sleep(0)  # Yield to event loop
-
-        pulse_start = time.time()
-
-        # Wait for echo to go LOW (with timeout)
-        timeout_time = pulse_start + self.TIMEOUT_SECONDS
-
-        while GPIO.input(self.echo_pin) == GPIO.HIGH:
-            if time.time() > timeout_time:
-                return None  # Timeout
-            await asyncio.sleep(0)
-
-        pulse_end = time.time()
-
-        # Calculate distance
-        pulse_duration = pulse_end - pulse_start
-        distance_cm = (pulse_duration * self.SPEED_OF_SOUND) / 2
-
-        # Validate range
-        if not (self.MIN_DISTANCE_CM <= distance_cm <= self.MAX_DISTANCE_CM):
-            return None
-
-        return distance_cm
-
-    async def is_obstacle_detected(self, threshold_cm: float = 30.0) -> bool:
-        """
-        Check if obstacle is within threshold distance.
-
-        Args:
-            threshold_cm: Distance threshold in cm
-
-        Returns:
-            True if obstacle detected within threshold
-        """
-        distance = await self.measure_distance(samples=3)
-
-        if distance is None:
+        self._trigger = trigger_pin
+        self._echo = echo_pin
+        self._max_dist = max_distance
+        self._sensor: Optional[DistanceSensor] = None
+        self._status = HardwareStatus.UNKNOWN
+    
+    async def initialize(self) -> bool:
+        """Initialize the sensor hardware."""
+        try:
+            self._status = HardwareStatus.INITIALIZING
+            logger.info(
+                "ultrasonic.initializing",
+                trigger=self._trigger,
+                echo=self._echo
+            )
+            
+            # Initialize gpiozero sensor
+            # Run in executor to avoid blocking if pin factory is slow
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._init_device)
+            
+            self._status = HardwareStatus.READY
+            return True
+            
+        except ImportError:
+            logger.error("ultrasonic.import_error", error="gpiozero not installed")
+            self._status = HardwareStatus.ERROR
+            return False
+        except Exception as e:
+            logger.error("ultrasonic.init_failed", error=str(e))
+            self._status = HardwareStatus.ERROR
             return False
 
-        return distance <= threshold_cm
+    def _init_device(self):
+        """Internal synchronous initialization."""
+        try:
+            self._sensor = DistanceSensor(
+                echo=self._echo,
+                trigger=self._trigger,
+                max_distance=self._max_dist
+            )
+        except BadPinFactory:
+            # Fallback for non-Pi environments
+            logger.warning("ultrasonic.gpio_fallback", msg="Using MockPinFactory")
+            from gpiozero.pins.mock import MockFactory
+            from gpiozero import Device
+            Device.pin_factory = MockFactory()
+            self._sensor = DistanceSensor(
+                echo=self._echo,
+                trigger=self._trigger,
+                max_distance=self._max_dist
+            )
 
-    async def continuous_monitoring(
-        self,
-        callback,
-        interval: float = 0.1,
-        samples: int = 3
-    ) -> None:
+    async def get_distance(self) -> Optional[float]:
+        """Get distance measurement in centimeters.
+        
+        Returns:
+            Distance in cm, or None if measurement failed
         """
-        Continuously monitor distance and call callback.
-
-        Args:
-            callback: Async function(distance_cm) called on each measurement
-            interval: Time between measurements in seconds
-            samples: Samples per measurement
-
-        Example:
-            >>> async def on_distance(dist):
-            ...     print(f"Distance: {dist:.1f} cm")
-            >>> await sensor.continuous_monitoring(on_distance, interval=0.5)
-        """
-        while True:
-            distance = await self.measure_distance(samples=samples)
-
-            if distance is not None:
-                await callback(distance)
-
-            await asyncio.sleep(interval)
+        if self._status != HardwareStatus.READY or not self._sensor:
+            return None
+            
+        try:
+            # gpiozero property access is synchronous but fast
+            # We can run in executor if it proves blocking
+            distance_m = self._sensor.distance
+            
+            # Convert m to cm and round
+            return round(distance_m * 100, 1)
+            
+        except Exception as e:
+            logger.warning("ultrasonic.read_failed", error=str(e))
+            return None
 
     async def cleanup(self) -> None:
-        """Cleanup GPIO resources."""
-        GPIO.cleanup([self.trigger_pin, self.echo_pin])
-        self._initialized = False
+        """Release hardware resources."""
+        if self._sensor:
+            self._sensor.close()
+            self._sensor = None
+        self._status = HardwareStatus.UNKNOWN
+
+    def is_available(self) -> bool:
+        return self._status == HardwareStatus.READY
+
+    def get_status(self) -> Dict[str, Any]:
+        return {
+            "status": self._status.value,
+            "trigger_pin": self._trigger,
+            "echo_pin": self._echo,
+            "max_distance": self._max_dist
+        }
+
+    def get_health(self) -> Dict[str, Any]:
+        """Return component health status."""
+        return {
+            "healthy": self._status == HardwareStatus.READY,
+            "error": None if self._status == HardwareStatus.READY else "Sensor not ready",
+            "connected": self._sensor is not None
+        }

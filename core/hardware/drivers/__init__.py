@@ -3,6 +3,7 @@
 # Drivers de base
 from .adc import ADC
 from .imu import MPU6050
+from .ultrasonic import UltrasonicSensor
 
 # Drivers servo
 from .pca9685 import PCA9685
@@ -17,4 +18,6 @@ __all__ = [
     "PCA9685",
     "PCA9685ServoController",
     "MockServoController",
+    # Sensor drivers
+    "UltrasonicSensor",
 ]
