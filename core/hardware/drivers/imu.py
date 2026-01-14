@@ -164,3 +164,10 @@ class MPU6050(IHardwareComponent):
             "status": self._status.value,
             "available": self.is_available()
         }
+
+    def get_health(self) -> Dict[str, Any]:
+        """Retourne l'état de santé du composant."""
+        return {
+            "healthy": self._status == HardwareStatus.READY,
+            "error": None if self._status == HardwareStatus.READY else "Driver not ready"
+        }
