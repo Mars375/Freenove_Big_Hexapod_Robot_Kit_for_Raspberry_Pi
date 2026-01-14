@@ -46,6 +46,23 @@ async def shutdown_event():
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
+    index_path = os.path.join(DIST_DIR, "index.html")
+    if not os.path.exists(index_path):
+        return HTMLResponse(
+            content="""
+            <html>
+                <body style="background:#05060a; color:#00d2ff; font-family:sans-serif; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh;">
+                    <h1>Hexapod OS - Frontend Non Construit</h1>
+                    <p>Le dossier <code>core/web/frontend/dist</code> est manquant.</p>
+                    <div style="background:#1a1b26; padding:20px; border-radius:8px; border:1px solid #333;">
+                        <p>Pour construire l'application, lancez :</p>
+                        <code>cd core/web/frontend && npm install && npm run build</code>
+                    </div>
+                </body>
+            </html>
+            """,
+            status_code=404
+        )
     return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/status")
