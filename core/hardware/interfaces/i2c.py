@@ -29,6 +29,16 @@ class I2CInterface(ABC):
         pass
 
     @abstractmethod
+    def write_byte(self, address: int, value: int) -> None:
+        """Write a single byte to the device"""
+        pass
+
+    @abstractmethod
+    def read_byte(self, address: int) -> int:
+        """Read a single byte from the device"""
+        pass
+
+    @abstractmethod
     def read_byte_data(self, address: int, register: int) -> int:
         """Read a byte from a specific register"""
         pass
@@ -70,12 +80,29 @@ class SMBusI2CInterface(I2CInterface):
 
     def write_byte_data(self, address: int, register: int, value: int) -> None:
         if not self._bus:
-            # logger.warning("i2c.smbus.write_mocked", address=address, register=register, value=value)
             return
         try:
             self._bus.write_byte_data(address, register, value)
         except Exception as e:
             logger.error("i2c.smbus.write_failed", error=str(e))
+            raise
+
+    def write_byte(self, address: int, value: int) -> None:
+        if not self._bus:
+            return
+        try:
+            self._bus.write_byte(address, value)
+        except Exception as e:
+            logger.error("i2c.smbus.write_byte_failed", error=str(e))
+            raise
+
+    def read_byte(self, address: int) -> int:
+        if not self._bus:
+            return 0
+        try:
+            return self._bus.read_byte(address)
+        except Exception as e:
+            logger.error("i2c.smbus.read_byte_failed", error=str(e))
             raise
 
     def read_byte_data(self, address: int, register: int) -> int:

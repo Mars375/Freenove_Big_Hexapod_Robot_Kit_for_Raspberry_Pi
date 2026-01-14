@@ -33,11 +33,11 @@ class SensorController:
         if not self._imu:
             self._imu = await self.factory.get_imu()
             
-        # Ultrasonic driver reference missing in factory? 
-        # We need to add it to factory later or instantiate it here using HAL.
-        # For now, bypassing ultrasonic if not in factory
-        # self._ultrasonic = await self.factory.get_ultrasonic() 
-        pass
+        if not self._ultrasonic:
+             try:
+                 self._ultrasonic = await self.factory.get_ultrasonic()
+             except Exception:
+                 logger.warning("sensor_controller.ultrasonic_not_found")
 
     async def read_battery(self) -> dict:
         """Read battery voltage"""
@@ -120,9 +120,12 @@ class SensorController:
     async def read_ultrasonic(self) -> dict:
         """Read ultrasonic distance"""
         try:
-            # await self._ensure_hardware() 
-            # Placeholder until ultrasonic is in factory
-            distance = 50.0
+            await self._ensure_hardware()
+            distance = 0.0
+            if self._ultrasonic:
+                distance = await self._ultrasonic.get_distance()
+                if distance is None:
+                    distance = 0.0
 
             return {
                 "distance": round(distance, 1),
@@ -130,4 +133,14 @@ class SensorController:
             }
         except Exception as e:
             logger.error("sensor_controller.ultrasonic_read_failed", error=str(e))
-            raise SensorReadError(f"Ultrasonic read failed: {e}")
+            return {"distance": 0.0, "error": str(e)}
+
+    async def get_ultrasonic_distance(self) -> float:
+        """Legacy compatibility method for websocket."""
+        data = await self.read_ultrasonic()
+        return data.get("distance", 0.0)
+
+    async def get_battery_voltage(self) -> float:
+        """Legacy compatibility method for websocket."""
+        data = await self.read_battery()
+        return data.get("voltage", 0.0)

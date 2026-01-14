@@ -13,8 +13,9 @@ class CameraController:
     def __init__(self):
         self.factory = get_hardware_factory()
         self._servo = None
-        self._horizontal_channel = 0  # Pan servo channel (Likely on Board 1, verifies with user setup if known)
-        self._vertical_channel = 1    # Tilt servo channel
+        self._driver = None
+        self._horizontal_channel = 0
+        self._vertical_channel = 1
         # Note: If cameras are on specific channels, we need to know. 
         # Usually they are 0 and 1. If Board 1 is 0-15 (0x41), and Board 0 is 16-31 (0x40).
         # We need to confirm if Camera is on Board 1 (0, 1) or Board 2 (virtually 16, 17)
@@ -23,6 +24,8 @@ class CameraController:
     async def _ensure_hardware(self):
         if not self._servo:
             self._servo = await self.factory.create_servo_controller()
+        if not self._driver:
+            self._driver = await self.factory.get_camera()
     
     @property
     def is_available(self) -> bool:
@@ -62,6 +65,13 @@ class CameraController:
             logger.error("camera_controller.rotate_failed", error=str(e))
             raise CommandExecutionError(f"Camera rotation failed: {e}")
     
+    async def get_frame(self) -> bytes:
+        """Get the latest frame from the camera driver."""
+        await self._ensure_hardware()
+        if self._driver:
+            return await self._driver.get_frame()
+        return b""
+
     async def center(self) -> bool:
         """Center camera to default position"""
         return await self.rotate(0, 0)

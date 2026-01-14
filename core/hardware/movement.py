@@ -12,6 +12,7 @@ import os
 from typing import Tuple, List, Optional, Dict, Any
 from dataclasses import dataclass, field
 import structlog
+from gpiozero import OutputDevice
 
 from core.exceptions import HardwareNotAvailableError, CommandExecutionError
 from core.hardware.interfaces import IServoController
@@ -140,6 +141,15 @@ class MovementController:
         
         # Gait executor (created on first use)
         self._gait: Optional[GaitExecutor] = None
+        
+        # Power control (GPIO 4 is active high disable)
+        try:
+            self._power_pin = OutputDevice(4)
+            # Power ON by default
+            self._power_pin.off()
+        except Exception:
+            self._power_pin = None
+            logger.warning("movement.power_pin_failed")
         
         # Apply initial calibration
         self._calibrate()
@@ -326,6 +336,10 @@ class MovementController:
         try:
             logger.info("movement_controller.initializing")
             
+            # Ensure power is ON
+            if self._power_pin:
+                self._power_pin.off()
+            
             # Initialize servo hardware
             await self._servo.initialize()
             
@@ -334,7 +348,7 @@ class MovementController:
             
             self._initialized = True
             logger.info("movement_controller.initialized")
-            
+            return True
         except Exception as e:
             logger.error("movement_controller.init_failed", error=str(e))
             raise

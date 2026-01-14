@@ -180,14 +180,16 @@ class CameraDriver(IHardwareComponent):
         self._status = HardwareStatus.UNINITIALIZED
 
     def is_available(self) -> bool:
-        return self._status == HardwareStatus.READY and HAS_PICAMERA
+        return self._status == HardwareStatus.READY and (HAS_PICAMERA or HAS_OPENCV)
 
     def get_status(self) -> Dict[str, Any]:
         return {
             "status": self._status.value,
             "resolution": self._resolution,
             "streaming": self._streaming,
-            "has_picamera": HAS_PICAMERA
+            "has_picamera": HAS_PICAMERA,
+            "has_opencv": HAS_OPENCV,
+            "mode": "picamera2" if HAS_PICAMERA else "opencv" if HAS_OPENCV else "none"
         }
 
     def get_health(self) -> Dict[str, Any]:

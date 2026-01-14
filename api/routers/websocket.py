@@ -42,21 +42,25 @@ async def websocket_endpoint(websocket: WebSocket):
         try:
             nonlocal sonar_enabled
             while True:
-                # Use current robot state
-                distance = 0
-                if sonar_enabled:
-                    distance = await robot.sensors.get_ultrasonic_distance()
+                try:
+                    # Use current robot state
+                    distance = 0
+                    if sonar_enabled:
+                        distance = await robot.sensors.get_ultrasonic_distance()
+                    
+                    battery = await robot.sensors.get_battery_voltage()
+                    
+                    # App.jsx expects type "telemetry" with ultrasonic, battery, roll, pitch, yaw
+                    state = {
+                        "type": "telemetry",
+                        "ultrasonic": distance,
+                        "battery": battery,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }
+                    await websocket.send_json(state)
+                except Exception as loop_e:
+                    logger.warning("websocket.telemetry_loop_error", error=str(loop_e))
                 
-                battery = await robot.sensors.get_battery_voltage()
-                
-                # App.jsx expects type "telemetry" with ultrasonic, battery, roll, pitch, yaw
-                state = {
-                    "type": "telemetry",
-                    "ultrasonic": distance,
-                    "battery": battery[0] if isinstance(battery, (list, tuple)) else battery,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                }
-                await websocket.send_json(state)
                 await asyncio.sleep(0.5)  # Update at 2 Hz
         except Exception as e:
             logger.debug("websocket.telemetry_stream_stopped", error=str(e))
