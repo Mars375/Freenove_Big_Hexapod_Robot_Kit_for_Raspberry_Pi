@@ -283,6 +283,8 @@ class GaitExecutor:
                 break
                 
             # Use current internal parameters for each cycle
+            self.reset_points()  # RESET POINTS EVERY CYCLE TO PREVENT DRIFT
+            
             if gait_type == GaitType.TRIPOD:
                 await self.execute_tripod_cycle(self.x, self.y, self.speed, self.angle)
             else:

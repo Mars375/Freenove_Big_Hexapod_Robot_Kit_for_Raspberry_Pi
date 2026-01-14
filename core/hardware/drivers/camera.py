@@ -129,14 +129,20 @@ class CameraDriver(IHardwareComponent):
 
     async def start_streaming(self):
         """Start JPEG streaming."""
-        if not self._camera or self._streaming:
+        if not self._camera:  # Removed self._streaming check to ensure start() is called if needed
             return
             
         try:
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self._start_recording)
-            self._streaming = True
-            logger.info("camera.streaming_started")
+            
+            # Ensure camera is started (idempotent in picamera2)
+            if HAS_PICAMERA:
+                await loop.run_in_executor(None, self._camera.start)
+            
+            if not self._streaming:
+                await loop.run_in_executor(None, self._start_recording)
+                self._streaming = True
+                logger.info("camera.streaming_started")
         except Exception as e:
             logger.error("camera.streaming_failed", error=str(e))
 
@@ -148,13 +154,17 @@ class CameraDriver(IHardwareComponent):
 
     async def stop_streaming(self):
         """Stop JPEG streaming."""
-        if not self._camera or not self._streaming:
+        if not self._camera:
             return
             
         try:
             loop = asyncio.get_running_loop()
             if HAS_PICAMERA:
-                await loop.run_in_executor(None, self._camera.stop_recording)
+                if self._streaming:
+                    await loop.run_in_executor(None, self._camera.stop_recording)
+                # FULL STOP to turn off LED
+                await loop.run_in_executor(None, self._camera.stop)
+                
             self._streaming = False
             logger.info("camera.streaming_stopped")
         except Exception as e:
