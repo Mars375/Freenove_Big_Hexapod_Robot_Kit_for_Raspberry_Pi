@@ -15,13 +15,25 @@ logger = structlog.get_logger()
 
 app = FastAPI(title="Hexapod Control")
 
+import os
+
 # Initialize hardware factory
 settings = get_settings()
 factory = get_hardware_factory(settings)
 
-# Setup templates and static files
-templates = Jinja2Templates(directory="core/web/templates")
-app.mount("/static", StaticFiles(directory="core/web/static"), name="static")
+# Paths for frontend distribution
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DIST_DIR = os.path.join(BASE_DIR, "frontend", "dist")
+
+# Setup templates and static files from the React build
+templates = Jinja2Templates(directory=DIST_DIR)
+
+if os.path.exists(DIST_DIR):
+    app.mount("/assets", StaticFiles(directory=os.path.join(DIST_DIR, "assets")), name="static")
+    # Serve PWA icons and manifest if they are in the root of dist
+    app.mount("/pwa", StaticFiles(directory=DIST_DIR), name="pwa")
+else:
+    logger.warning("web_server.dist_not_found", path=DIST_DIR)
 
 @app.on_event("startup")
 async def startup_event():
