@@ -65,16 +65,19 @@ class CameraDriver(IHardwareComponent):
             
         try:
             self._status = HardwareStatus.INITIALIZING
+            logger.info("camera.detecting_drivers", has_picamera=HAS_PICAMERA, has_opencv=HAS_OPENCV)
             
             # Use run_in_executor for blocking camera init
             loop = asyncio.get_running_loop()
             if HAS_PICAMERA:
                 await loop.run_in_executor(None, self._init_camera_pi)
+                mode = "picamera2"
             else:
                 await loop.run_in_executor(None, self._init_camera_cv2)
+                mode = "opencv"
             
             self._status = HardwareStatus.READY
-            logger.info("camera.initialized", resolution=self._resolution, mode="picamera2" if HAS_PICAMERA else "opencv")
+            logger.info("camera.initialized", resolution=self._resolution, mode=mode)
             return True
             
         except Exception as e:
@@ -170,8 +173,14 @@ class CameraDriver(IHardwareComponent):
 
     def _wait_for_frame_pi(self) -> bytes:
         with self._streaming_output.condition:
-            if self._streaming_output.condition.wait(timeout=1.0):
+            if self._streaming_output.condition.wait(timeout=2.0):
                 return self._streaming_output.frame
+            
+            if not hasattr(self, "_last_pi_fail"):
+                self._last_pi_fail = 0
+            if time.time() - self._last_pi_fail > 5:
+                logger.warning("camera.pi_wait_timeout")
+                self._last_pi_fail = time.time()
             return b""
 
     def _get_frame_cv2(self) -> bytes:
