@@ -141,16 +141,17 @@ const App = () => {
           const joyX = Math.cos(data.angle.radian) * data.distance;
           const joyY = Math.sin(data.angle.radian) * data.distance;
           
-          // Scaled to 500-2500 range, default 1500
-          const h = 1500 + Math.round((joyX / 50) * 500);
-          const v = 1500 + Math.round((joyY / 50) * 500);
+          // Scale to -90 to 90 (degrees offset from center)
+          const h = Math.round((joyX / 50) * 90);
+          const v = Math.round((joyY / 50) * 45); // Tilt range is usually smaller
           
           setHeadPos({ h, v });
           sendCommand({ cmd: 'camera', horizontal: h, vertical: v });
         });
   
         headManager.on('end', () => {
-          // Stay in position or center? Usually stay.
+          // Optional: sendCommand({ cmd: 'camera', horizontal: 0, vertical: 0 }); 
+          // Usually better to keep position
         });
       }
   }, [connected, actionMode]);

@@ -120,20 +120,25 @@ class UltrasonicSensor(IHardwareComponent):
         Returns:
             Distance in cm, or None if measurement failed
         """
-        if self._status != HardwareStatus.READY or not self._sensor:
-            return None
+        if not self.is_available() or not self._sensor:
+            return 0.0
             
         try:
-            # gpiozero property access is synchronous but fast
-            # We can run in executor if it proves blocking
-            distance_m = self._sensor.distance
-            
-            # Convert m to cm and round
-            return round(distance_m * 100, 1)
-            
+            # We use a small retry for stability on "no echo"
+            for _ in range(2):
+                try:
+                    # gpiozero property access is synchronous
+                    dist = self._sensor.distance * 100
+                    return round(float(dist), 1)
+                except Exception as e:
+                    if "no echo" in str(e).lower():
+                        await asyncio.sleep(0.01)
+                        continue
+                    raise e
+            return 0.0
         except Exception as e:
             logger.warning("ultrasonic.read_failed", error=str(e))
-            return None
+            return 0.0
 
     async def cleanup(self) -> None:
         """Release hardware resources."""
