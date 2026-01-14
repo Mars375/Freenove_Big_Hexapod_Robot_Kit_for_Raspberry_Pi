@@ -279,12 +279,21 @@ class PCA9685ServoController(IServoController):
         self.logger.info("Nettoyage PCA9685ServoController")
         
         try:
-            # Le cleanup du PCA9685 sera fait par le composant lui-même
+            await self.relax()
             self._current_angles.clear()
             self.logger.info("PCA9685ServoController nettoyé")
             
         except Exception as e:
             self.logger.error(f"Erreur lors du cleanup: {e}")
+    
+    async def relax(self) -> None:
+        """Désactive tous les servos (Full OFF)."""
+        self.logger.info("Relaxing all servos (Full OFF)")
+        # PCA9685 Full OFF bit is bit 4 of LEDn_OFF_H (value 4096 / 0x1000)
+        # Our set_all_pwm handles the register writing.
+        await self._pca_low.set_all_pwm(0, 4096)
+        await self._pca_high.set_all_pwm(0, 4096)
+        self._current_angles.clear()
     
     def reset(self) -> None:
         """Remet tous les servos en position neutre (90°)."""

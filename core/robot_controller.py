@@ -9,6 +9,7 @@ from core.hardware import (
     CameraController,
     BuzzerController
 )
+from core.hardware.factory import get_hardware_factory
 
 logger = structlog.get_logger()
 
@@ -51,7 +52,18 @@ class RobotController:
         try:
             logger.info("robot_controller.initializing")
             
-            # Only movement needs async initialization
+            # Get hardware components from factory
+            factory = get_hardware_factory()
+            
+            # Initialize servos and inject into movement
+            servo = await factory.create_servo_controller()
+            self.movement.set_servo_controller(servo)
+            
+            # Inject IMU if available for balancing
+            imu = await factory.get_imu()
+            self.movement._imu = imu
+            
+            # Final movement initialization
             await self.movement.initialize()
             
             self._initialized = True

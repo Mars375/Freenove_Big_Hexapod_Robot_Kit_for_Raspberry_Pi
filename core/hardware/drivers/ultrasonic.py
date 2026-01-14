@@ -62,24 +62,54 @@ class UltrasonicSensor(IHardwareComponent):
             return False
 
     def _init_device(self):
-        """Internal synchronous initialization."""
+        """Internal synchronous initialization with factory fallback."""
         try:
             self._sensor = DistanceSensor(
                 echo=self._echo,
                 trigger=self._trigger,
                 max_distance=self._max_dist
             )
-        except BadPinFactory:
-            # Fallback for non-Pi environments
-            logger.warning("ultrasonic.gpio_fallback", msg="Using MockPinFactory")
-            from gpiozero.pins.mock import MockFactory
-            from gpiozero import Device
-            Device.pin_factory = MockFactory()
-            self._sensor = DistanceSensor(
-                echo=self._echo,
-                trigger=self._trigger,
-                max_distance=self._max_dist
-            )
+        except (BadPinFactory, Exception) as e:
+            logger.warning("ultrasonic.gpio_issue", error=str(e))
+            
+            # Try to force a factory if default fails
+            try:
+                from gpiozero import Device
+                # List of factories to try in order of preference
+                for factory_name in ['lgpio', 'rpigpio', 'pigpio', 'native']:
+                    try:
+                        if factory_name == 'lgpio':
+                            from gpiozero.pins.lgpio import LGPIOFactory
+                            Device.pin_factory = LGPIOFactory()
+                        elif factory_name == 'rpigpio':
+                            from gpiozero.pins.rpigpio import RPiGPIOFactory
+                            Device.pin_factory = RPiGPIOFactory()
+                        elif factory_name == 'pigpio':
+                            from gpiozero.pins.pigpio import PiGPIOFactory
+                            Device.pin_factory = PiGPIOFactory()
+                        
+                        logger.info("ultrasonic.factory_switch", factory=factory_name)
+                        self._sensor = DistanceSensor(
+                            echo=self._echo,
+                            trigger=self._trigger,
+                            max_distance=self._max_dist
+                        )
+                        return # Success
+                    except (ImportError, Exception):
+                        continue
+                
+                # Ultimate fallback to Mock
+                logger.warning("ultrasonic.mock_fallback", msg="All hardware factories failed, using Mock")
+                from gpiozero.pins.mock import MockFactory
+                Device.pin_factory = MockFactory()
+                self._sensor = DistanceSensor(
+                    echo=self._echo,
+                    trigger=self._trigger,
+                    max_distance=self._max_dist
+                )
+            except Exception as final_e:
+                logger.error("ultrasonic.final_init_failed", error=str(final_e))
+                raise
 
     async def get_distance(self) -> Optional[float]:
         """Get distance measurement in centimeters.

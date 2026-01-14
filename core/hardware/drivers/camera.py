@@ -14,6 +14,12 @@ try:
 except ImportError:
     HAS_PICAMERA = False
 
+try:
+    import cv2
+    HAS_OPENCV = True
+except ImportError:
+    HAS_OPENCV = False
+
 from core.hardware.interfaces.base import IHardwareComponent, HardwareStatus
 
 logger = structlog.get_logger()
@@ -52,8 +58,8 @@ class CameraDriver(IHardwareComponent):
 
     async def initialize(self) -> bool:
         """Initialize the camera."""
-        if not HAS_PICAMERA:
-            logger.error("camera.init_failed", error="picamera2 not installed")
+        if not HAS_PICAMERA and not HAS_OPENCV:
+            logger.error("camera.init_failed", error="Neither picamera2 nor opencv-python installed")
             self._status = HardwareStatus.ERROR
             return False
             
@@ -62,10 +68,13 @@ class CameraDriver(IHardwareComponent):
             
             # Use run_in_executor for blocking camera init
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self._init_camera)
+            if HAS_PICAMERA:
+                await loop.run_in_executor(None, self._init_camera_pi)
+            else:
+                await loop.run_in_executor(None, self._init_camera_cv2)
             
             self._status = HardwareStatus.READY
-            logger.info("camera.initialized", resolution=self._resolution)
+            logger.info("camera.initialized", resolution=self._resolution, mode="picamera2" if HAS_PICAMERA else "opencv")
             return True
             
         except Exception as e:
@@ -73,8 +82,8 @@ class CameraDriver(IHardwareComponent):
             self._status = HardwareStatus.ERROR
             return False
 
-    def _init_camera(self):
-        """Internal camera init."""
+    def _init_camera_pi(self):
+        """Internal camera init using Picamera2."""
         self._camera = Picamera2()
         transform = Transform(hflip=1 if self._hflip else 0, vflip=1 if self._vflip else 0)
         
@@ -85,6 +94,14 @@ class CameraDriver(IHardwareComponent):
         )
         self._camera.configure(config)
         self._camera.start()
+
+    def _init_camera_cv2(self):
+        """Internal camera init using OpenCV."""
+        self._camera = cv2.VideoCapture(0)
+        self._camera.set(cv2.CAP_PROP_FRAME_WIDTH, self._resolution[0])
+        self._camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self._resolution[1])
+        if not self._camera.isOpened():
+            raise RuntimeError("Could not open OpenCV video capture")
 
     async def start_streaming(self):
         """Start JPEG streaming."""
@@ -112,7 +129,8 @@ class CameraDriver(IHardwareComponent):
             
         try:
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self._camera.stop_recording)
+            if HAS_PICAMERA:
+                await loop.run_in_executor(None, self._camera.stop_recording)
             self._streaming = False
             logger.info("camera.streaming_stopped")
         except Exception as e:
@@ -120,18 +138,31 @@ class CameraDriver(IHardwareComponent):
 
     async def get_frame(self) -> bytes:
         """Get the latest frame as bytes."""
-        if not self._streaming:
+        if not self._streaming and HAS_PICAMERA:
             await self.start_streaming()
             
-        # This is a blocking wait on a condition variable
-        # Should be run in executor or replaced with an async-friendly condition
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._wait_for_frame)
+        if HAS_PICAMERA:
+            return await loop.run_in_executor(None, self._wait_for_frame_pi)
+        else:
+            return await loop.run_in_executor(None, self._get_frame_cv2)
 
-    def _wait_for_frame(self) -> bytes:
+    def _wait_for_frame_pi(self) -> bytes:
         with self._streaming_output.condition:
-            self._streaming_output.condition.wait(timeout=1.0)
-            return self._streaming_output.frame
+            if self._streaming_output.condition.wait(timeout=1.0):
+                return self._streaming_output.frame
+            return b""
+
+    def _get_frame_cv2(self) -> bytes:
+        ret, frame = self._camera.read()
+        if not ret:
+            return b""
+        if self._hflip:
+            frame = cv2.flip(frame, 1)
+        if self._vflip:
+            frame = cv2.flip(frame, 0)
+        ret, buffer = cv2.imencode('.jpg', frame)
+        return buffer.tobytes() if ret else b""
 
     async def cleanup(self) -> None:
         """Release camera resources."""
@@ -140,7 +171,10 @@ class CameraDriver(IHardwareComponent):
                 await self.stop_streaming()
             
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self._camera.close)
+            if HAS_PICAMERA:
+                await loop.run_in_executor(None, self._camera.close)
+            else:
+                await loop.run_in_executor(None, self._camera.release)
             self._camera = None
             
         self._status = HardwareStatus.UNINITIALIZED

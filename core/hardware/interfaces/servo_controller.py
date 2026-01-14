@@ -97,3 +97,8 @@ class IServoController(ABC):
     def reset(self) -> None:
         """Reset all servos to neutral position (90 degrees)"""
         pass
+
+    @abstractmethod
+    async def relax(self) -> None:
+        """Relax all servos (disable PWM outputs)"""
+        pass

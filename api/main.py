@@ -9,9 +9,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+import os
 from api.routers import advanced, buzzer, camera, leds, movement, sensors, websocket
 from core.config import settings
 from core.logger import get_logger
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, FileResponse
 
 logger = get_logger(__name__)
 
@@ -47,7 +50,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     
-    # Include all routers
+    # Modern API (v1)
     app.include_router(movement.router, prefix="/api/v1/movement", tags=["movement"])
     app.include_router(sensors.router, prefix="/api/v1/sensors", tags=["sensors"])
     app.include_router(camera.router, prefix="/api/v1/camera", tags=["camera"])
@@ -56,6 +59,29 @@ def create_app() -> FastAPI:
     app.include_router(websocket.router, prefix="/api/v1/ws", tags=["websocket"])
     app.include_router(advanced.router, prefix="/api/v1/advanced", tags=["advanced"])
     
+    # Serve React Frontend
+    frontend_dist = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core", "web", "frontend", "dist")
+    
+    if os.path.exists(frontend_dist):
+        app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+        
+        @app.get("/{rest_of_path:path}")
+        async def serve_frontend(rest_of_path: str):
+            # Fallback for SPA routing
+            full_path = os.path.join(frontend_dist, rest_of_path)
+            if os.path.isfile(full_path):
+                return FileResponse(full_path)
+            return FileResponse(os.path.join(frontend_dist, "index.html"))
+    else:
+        logger.warning("frontend.dist_not_found", path=frontend_dist)
+        @app.get("/")
+        async def root_fallback() -> dict[str, Any]:
+            return {
+                "status": "online",
+                "message": "Frontend not built. Run 'npm run build' in core/web/frontend",
+                "api_docs": "/docs"
+            }
+
     return app
 
 

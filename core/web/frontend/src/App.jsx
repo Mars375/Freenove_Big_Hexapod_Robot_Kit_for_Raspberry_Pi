@@ -18,8 +18,19 @@ const App = () => {
   const [connected, setConnected] = useState(false);
   
   const moveJoystickRef = useRef(null);
-  const transJoystickRef = useRef(null);
+  const headJoystickRef = useRef(null);
   const socketRef = useRef(null);
+  
+  const [gaitMode, setGaitMode] = useState('1'); // '1' = Tripod, '2' = Wave
+  const [actionMode, setActionMode] = useState('linear'); // 'linear' or 'rotate'
+  const [headPos, setHeadPos] = useState({ h: 1500, v: 1500 });
+  const [balancing, setBalancing] = useState(false);
+  const [relaxed, setRelaxed] = useState(false);
+  const [speed, setSpeed] = useState(5);
+  const [altitude, setAltitude] = useState(-100);
+  const [sonarEnabled, setSonarEnabled] = useState(true);
+  const [cameraEnabled, setCameraEnabled] = useState(true);
+  const [faceEnabled, setFaceEnabled] = useState(false);
 
   // WebSocket Connection
   useEffect(() => {
@@ -27,7 +38,8 @@ const App = () => {
     // For development, we might need to point to the backend port if running separately
     // But for production build served by FastAPI, the host is the same.
     const host = window.location.hostname === 'localhost' ? 'localhost:8000' : window.location.host;
-    const wsUrl = `${protocol}//${host}/ws`;
+    // Update to match backend router prefix /api/v1/ws with endpoint /ws
+    const wsUrl = `${protocol}//${host}/api/v1/ws/ws`;
 
     const connect = () => {
       const ws = new WebSocket(wsUrl);
@@ -49,6 +61,8 @@ const App = () => {
         const data = JSON.parse(event.data);
         if (data.type === 'telemetry') {
           setTelemetry(prev => ({ ...prev, ...data }));
+        } else if (data.type === 'error') {
+          addLog(`ERROR: ${data.message}`, 'error');
         }
       };
     };
@@ -97,12 +111,49 @@ const App = () => {
         const robotX = Math.round((joyY / 75) * 35);  // Forward
         const robotY = Math.round((-joyX / 75) * 35); // Left/Right
         
-        sendCommand({ cmd: 'move', mode: 'custom', x: robotX, y: robotY, speed: 5 });
+        let angle = 0;
+        if (actionMode === 'rotate') {
+            // In rotate mode, x movement determines turn angle
+            angle = Math.round((joyX / 75) * 10); // Scale to -10 to 10
+            sendCommand({ cmd: 'move', mode: 'gait', x: robotX, y: 0, speed: speed, angle: angle });
+        } else {
+            sendCommand({ cmd: 'move', mode: 'motion', x: robotX, y: robotY, speed: speed, angle: 0 });
+        }
       });
 
       manager.on('end', () => sendCommand({ cmd: 'stop' }));
     }
-  }, [connected]);
+
+    if (headJoystickRef.current) {
+        const headManager = nipplejs.create({
+          zone: headJoystickRef.current,
+          mode: 'static',
+          position: { left: '50%', top: '50%' },
+          color: '#ff0055',
+          size: 100
+        });
+  
+        headManager.on('move', (evt, data) => {
+          const now = Date.now();
+          if (now - lastMoveRef.current < 100) return;
+          lastMoveRef.current = now;
+  
+          const joyX = Math.cos(data.angle.radian) * data.distance;
+          const joyY = Math.sin(data.angle.radian) * data.distance;
+          
+          // Scaled to 500-2500 range, default 1500
+          const h = 1500 + Math.round((joyX / 50) * 500);
+          const v = 1500 + Math.round((joyY / 50) * 500);
+          
+          setHeadPos({ h, v });
+          sendCommand({ cmd: 'camera', horizontal: h, vertical: v });
+        });
+  
+        headManager.on('end', () => {
+          // Stay in position or center? Usually stay.
+        });
+      }
+  }, [connected, actionMode]);
 
   return (
     <div className="hud-container">
@@ -118,12 +169,12 @@ const App = () => {
             {connected ? 'LINK SYNCED' : 'NO UPLINK'}
           </div>
           <div className="status-pill online">
-            PWR: 12.4V
+            PWR: {telemetry.battery.toFixed(1)}V
           </div>
         </div>
       </header>
 
-      {/* Left Panel: Télémétrie & Logs */}
+      {/* Left Panel: État Système & Terminal */}
       <aside className="panel panel-left">
         <section>
           <div className="section-title">ÉTAT SYSTÈME</div>
@@ -135,17 +186,17 @@ const App = () => {
                 </div>
              </div>
              <div className="slider-group">
-                <label>BATTERIE <span>98%</span></label>
+                <label>BATTERIE <span>{telemetry.battery.toFixed(1)}V</span></label>
                 <div style={{ height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: '98%', background: '#2ecc71', boxShadow: '0 0 10px #2ecc71' }}></div>
+                  <div style={{ height: '100%', width: `${Math.min(100, ((telemetry.battery - 6.0) / 2.4) * 100)}%`, background: '#2ecc71', boxShadow: '0 0 10px #2ecc71' }}></div>
                 </div>
              </div>
           </div>
         </section>
 
-        <section style={{flex: 1, display: 'flex', flexDirection: 'column'}}>
+        <section style={{flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0}}>
           <div className="section-title">TERMINAL DIAGNOSTIC</div>
-          <div className="terminal" style={{marginTop: '10px', flex: 1}}>
+          <div className="terminal" style={{marginTop: '10px', flex: 1, minHeight: 0}}>
             {logs.map(log => (
               <div key={log.id} className={`log-entry ${log.type}`}>
                 {`> ${log.text}`}
@@ -158,7 +209,7 @@ const App = () => {
       {/* Central Cockpit */}
       <main className="cockpit">
         <img 
-          src={connected ? "/video_feed" : "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=1200"} 
+          src={connected ? "/api/v1/camera/video_feed" : "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=1200"} 
           alt="HUD Feed" 
           className="video-feed"
         />
@@ -173,24 +224,101 @@ const App = () => {
 
           <div style={{position: 'absolute', bottom: '20px', right: '20px', textAlign: 'right', fontSize: '0.8rem', color: 'var(--neon-blue)', fontFamily: 'var(--font-mono)'}}>
              HDG: 042°<br/>
-             ALT: 100mm<br/>
-             STB: YES
+             ALT: {altitude}mm<br/>
+             STB: {balancing ? 'ACTIVE' : 'OFF'}
           </div>
         </div>
       </main>
 
-      {/* Right Panel: Contrôles de Navigation */}
-      <aside className="panel panel-right">
+      {/* Central Control Bay (Under Camera) */}
+      <div className="controls-bay">
         <section>
-          <div className="section-title">NAVIGATION LOCALE</div>
-          <div className="joystick-container" ref={moveJoystickRef}>
-            <div className="joystick-base"></div>
+          <div className="section-title">NAVIGATION & VITESSE</div>
+          <div style={{display: 'flex', justifyContent: 'space-around', margin: '15px 0', gap: '10px'}}>
+            <button 
+              className={`status-pill ${actionMode === 'linear' ? 'online' : 'offline'}`}
+              onClick={() => setActionMode('linear')}
+              style={{cursor: 'pointer', flex: 1}}
+            >
+              LINÉAIRE
+            </button>
+            <button 
+              className={`status-pill ${actionMode === 'rotate' ? 'online' : 'offline'}`}
+              onClick={() => setActionMode('rotate')}
+              style={{cursor: 'pointer', flex: 1}}
+            >
+              ROTATION
+            </button>
+          </div>
+          <div className="slider-group">
+              <label>MODULATION VITESSE <span>{speed}</span></label>
+              <input 
+                type="range" 
+                min="2" 
+                max="10" 
+                value={speed} 
+                onChange={(e) => setSpeed(parseInt(e.target.value))}
+                style={{width: '100%'}}
+              />
           </div>
         </section>
 
         <section>
-          <div className="section-title">ATTITUDE & POSTURE</div>
-          <div className="sliders" style={{marginTop: '15px'}}>
+          <div className="section-title">SYSTÈMES & ALLURE</div>
+          <div style={{display: 'flex', justifyContent: 'space-around', margin: '15px 0', gap: '10px'}}>
+            <button 
+              className={`status-pill ${gaitMode === '1' ? 'online' : 'offline'}`}
+              onClick={() => { setGaitMode('1'); addLog('GAIT: TRIPOD'); }}
+              style={{cursor: 'pointer', flex: 1}}
+            >
+              TRIPOD
+            </button>
+            <button 
+              className={`status-pill ${gaitMode === '2' ? 'online' : 'offline'}`}
+              onClick={() => { setGaitMode('2'); addLog('GAIT: WAVE'); }}
+              style={{cursor: 'pointer', flex: 1}}
+            >
+              WAVE
+            </button>
+          </div>
+          <div style={{display: 'flex', gap: '10px'}}>
+            <button 
+              className={`status-pill ${balancing ? 'online' : 'offline'}`}
+              onClick={() => {
+                const newState = !balancing;
+                setBalancing(newState);
+                sendCommand({ cmd: 'balance', enabled: newState });
+                addLog(newState ? 'STABILISATION ACTIVE' : 'STABILISATION PASSIVE');
+              }}
+              style={{cursor: 'pointer', flex: 1}}
+            >
+              STABILISER
+            </button>
+            <button 
+              className={`status-pill ${relaxed ? 'error' : 'offline'}`}
+              onClick={() => {
+                const newState = !relaxed;
+                setRelaxed(newState);
+                sendCommand({ cmd: 'relax', enabled: newState });
+                addLog(newState ? 'SERVO POWER OFF (RELAX)' : 'SERVO POWER ON');
+              }}
+              style={{cursor: 'pointer', flex: 1}}
+            >
+              {relaxed ? 'ACTIVER' : 'RELAX'}
+            </button>
+          </div>
+          <div style={{display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '10px'}}>
+             <div style={{display: 'flex', gap: '5px'}}>
+               <button className={`status-pill ${sonarEnabled ? 'online' : 'offline'}`} onClick={() => { setSonarEnabled(!sonarEnabled); sendCommand({cmd: 'sonar', enabled: !sonarEnabled}); }} style={{cursor: 'pointer', fontSize: '0.6rem', flex: 1}}>SNR: {sonarEnabled ? 'ON' : 'OFF'}</button>
+               <button className={`status-pill ${cameraEnabled ? 'online' : 'offline'}`} onClick={() => { setCameraEnabled(!cameraEnabled); sendCommand({cmd: 'camera_toggle', enabled: !cameraEnabled}); }} style={{cursor: 'pointer', fontSize: '0.6rem', flex: 1}}>CAM: {cameraEnabled ? 'ON' : 'OFF'}</button>
+             </div>
+             <button className={`status-pill ${faceEnabled ? 'online' : 'offline'}`} onClick={() => { setFaceEnabled(!faceEnabled); sendCommand({cmd: 'face', enabled: !faceEnabled}); }} style={{cursor: 'pointer', fontSize: '0.6rem', width: '100%'}}>RECON. FACIALE: {faceEnabled ? 'ON' : 'OFF'}</button>
+          </div>
+        </section>
+
+        <section>
+          <div className="section-title">POSTURE & ALTITUDE</div>
+          <div className="sliders" style={{marginTop: '10px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px'}}>
             <div className="slider-group">
                 <label>ROLL <span>0°</span></label>
                 <input type="range" min="-15" max="15" defaultValue="0" onChange={(e) => sendCommand({cmd: 'attitude', roll: parseFloat(e.target.value)})}/>
@@ -200,15 +328,38 @@ const App = () => {
                 <input type="range" min="-15" max="15" defaultValue="0" onChange={(e) => sendCommand({cmd: 'attitude', pitch: parseFloat(e.target.value)})}/>
             </div>
             <div className="slider-group">
-                <label>YAW <span>0°</span></label>
-                <input type="range" min="-15" max="15" defaultValue="0" onChange={(e) => sendCommand({cmd: 'attitude', yaw: parseFloat(e.target.value)})}/>
+                <label>ALTITUDE <span>{altitude}</span></label>
+                <input type="range" min="-150" max="-50" value={altitude} onChange={(e) => {
+                  const val = parseInt(e.target.value);
+                  setAltitude(val);
+                  sendCommand({cmd: 'height', value: val});
+                }}/>
             </div>
-            <div className="slider-group" style={{marginTop: '10px'}}>
-                <button className="status-pill online" style={{width: '100%', cursor: 'pointer'}} onClick={() => sendCommand({cmd: 'stand'})}>REDRESSER LE ROBOT</button>
-            </div>
+            <button className="status-pill online" style={{cursor: 'pointer', fontSize: '0.6rem'}} onClick={() => sendCommand({cmd: 'stand'})}>RESET POSTURE</button>
+          </div>
+        </section>
+      </div>
+
+      {/* Right Panel: Joysticks Only */}
+      <aside className="panel panel-right">
+        <section>
+          <div className="section-title">DIRECTION</div>
+          <div className="joystick-container" ref={moveJoystickRef} style={{height: '180px'}}>
+            <div className="joystick-base"></div>
+          </div>
+        </section>
+
+        <section>
+          <div className="section-title">TÊTE / CAMÉRA</div>
+          <div className="joystick-container" ref={headJoystickRef} style={{height: '180px'}}>
+            <div className="joystick-base"></div>
+          </div>
+          <div style={{textAlign: 'center', fontSize: '0.7rem', color: 'var(--neon-blue)', marginTop: '5px'}}>
+            PAN: {headPos.h} | TILT: {headPos.v}
           </div>
         </section>
       </aside>
+
     </div>
   );
 };

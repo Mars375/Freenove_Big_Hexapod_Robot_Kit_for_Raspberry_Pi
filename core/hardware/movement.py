@@ -17,6 +17,7 @@ from core.exceptions import HardwareNotAvailableError, CommandExecutionError
 from core.hardware.interfaces import IServoController
 from core.hardware.kinematics import HexapodKinematics
 from core.hardware.gaits import GaitExecutor, GaitType
+from core.hardware.controllers.pid import PIDController
 
 logger = structlog.get_logger()
 
@@ -79,17 +80,24 @@ class MovementController:
     # Initial neutral leg position
     NEUTRAL_POSITION = [140.0, 0.0, 0.0]
     
-    def __init__(self, servo_controller: Optional[IServoController] = None):
+    def __init__(self, servo_controller: Optional[IServoController] = None, imu_sensor: Any = None):
         """Initialize movement controller.
         
         Args:
             servo_controller: Servo controller implementation (injected)
-                            If None, will need to be set before use
+            imu_sensor: IMU sensor for balancing
         """
         self._servo = servo_controller
+        self._imu = imu_sensor
         self._initialized = False
         self._moving = False
         self._gait_task = None
+        
+        # Balance control
+        self._balancing = False
+        self._balance_task = None
+        self._pid_roll = PIDController(kp=0.5, ki=0.01, kd=0.1)
+        self._pid_pitch = PIDController(kp=0.5, ki=0.01, kd=0.1)
         
         # Body parameters
         self.body_height = self.DEFAULT_BODY_HEIGHT
@@ -428,27 +436,30 @@ class MovementController:
     
     async def move(
         self,
-        mode: str,
+        mode: str = "custom",
         x: int = 0,
-        y: int = 0,
+        y: int = 25,
         speed: int = 5,
-        angle: int = 0
+        angle: int = 0,
+        gait_type: str = "1"
     ) -> bool:
         """Execute movement command.
         
         Args:
-            mode: "forward", "backward", "left", "right", "turn_left", "turn_right"
-            x, y: Reserved for future use
-            speed: Speed factor (2-10)
-            angle: Turn angle (degrees)
+            mode: Predefined mode or "custom"
+            x: X axis movement (-35 to 35)
+            y: Y axis movement (-35 to 35)
+            speed: Movement speed (2 to 10)
+            angle: Rotation angle (-10 to 10)
+            gait_type: "1" = Tripod, "2" = Wave
         """
         if not self.is_available:
             raise HardwareNotAvailableError("Movement controller not initialized")
         
         try:
-            logger.info("movement.move", mode=mode, speed=speed)
+            logger.info("movement.move", mode=mode, x=x, y=y, speed=speed, angle=angle)
             
-            # Map mode to parameters (X = longitudinal, Y = lateral)
+            # Map mode to parameters
             params = {
                 "forward": (25, 0, 0),
                 "backward": (-25, 0, 0),
@@ -457,12 +468,18 @@ class MovementController:
                 "turn_left": (0, 0, 15),
                 "turn_right": (0, 0, -15),
                 "custom": (x, y, angle),
+                "motion": (x, y, 0),
+                "gait": (x, 0, angle),
             }
             
-            x_val, y_val, angle_val = params.get(mode, (0, 25, 0))
+            x_val, y_val, angle_val = params.get(mode, (x, y, angle))
             
+            # If everything is zero, stop
+            if x_val == 0 and y_val == 0 and angle_val == 0:
+                return await self.stop()
+
             await self.run_gait(
-                gait_type="1",  # Tripod
+                gait_type=gait_type,
                 x=x_val,
                 y=y_val,
                 speed=speed,
@@ -599,6 +616,95 @@ class MovementController:
         await self._set_leg_angles()
         
         await asyncio.sleep(0.3)
+        return True
+
+    async def relax(self) -> None:
+        """Disable all servos (relax)."""
+        if self._servo:
+            await self._servo.relax()
+            logger.info("movement.relax")
+
+    async def set_balance_mode(self, enabled: bool) -> None:
+        """Toggle IMU-based balance mode."""
+        if enabled == self._balancing:
+            return
+            
+        self._balancing = enabled
+        if enabled:
+            if self._balance_task:
+                self._balance_task.cancel()
+            self._balance_task = asyncio.create_task(self._balance_loop())
+            logger.info("movement.balance_enabled")
+        else:
+            if self._balance_task:
+                self._balance_task.cancel()
+                self._balance_task = None
+            logger.info("movement.balance_disabled")
+            await self.stand()
+
+    async def _balance_loop(self) -> None:
+        """Background loop for active balancing."""
+        if not self._imu:
+            # Try to get IMU from factory if not provided
+            from core.hardware.factory import get_hardware_factory
+            factory = get_hardware_factory()
+            self._imu = await factory.get_imu()
+            
+        self._pid_roll.reset()
+        self._pid_pitch.reset()
+        
+        try:
+            while self._balancing:
+                accel = await self._imu.read_accel()
+                if accel:
+                    # Simple roll/pitch from accel
+                    # Match legacy orientation/mapping if needed
+                    roll = math.atan2(accel[1], accel[2]) * 180 / math.pi
+                    pitch = math.atan2(-accel[0], math.sqrt(accel[1]**2 + accel[2]**2)) * 180 / math.pi
+                    
+                    # Apply PID
+                    adj_roll = self._pid_roll.update(roll)
+                    adj_pitch = self._pid_pitch.update(pitch)
+                    
+                    # Set attitude (internal call without log spam)
+                    await self._set_attitude_internal(adj_roll, adj_pitch, 0)
+                    
+                await asyncio.sleep(0.02) # 50Hz
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error("movement.balance_loop_error", error=str(e))
+            self._balancing = False
+
+    async def _set_attitude_internal(self, roll: float, pitch: float, yaw: float) -> None:
+        """Internal attitude adjustment without extra delays or logs."""
+        roll = max(-15, min(15, roll))
+        pitch = max(-15, min(15, pitch))
+        yaw = max(-15, min(15, yaw))
+        
+        roll_rad, pitch_rad, yaw_rad = math.radians(roll), math.radians(pitch), math.radians(yaw)
+        
+        footpoints = [
+            [137.1, 189.4, 0], [225.0, 0.0, 0], [137.1, -189.4, 0],
+            [-137.1, -189.4, 0], [-225.0, 0.0, 0], [-137.1, 189.4, 0],
+        ]
+        
+        position = [0, 0, self.body_height]
+        new_points = []
+        for fp in footpoints:
+            x = position[0] + fp[0] * math.cos(yaw_rad) - fp[1] * math.sin(yaw_rad)
+            y = position[1] + fp[0] * math.sin(yaw_rad) + fp[1] * math.cos(yaw_rad)
+            z = position[2] + fp[0] * math.sin(pitch_rad) + fp[1] * math.sin(roll_rad)
+            new_points.append([x, y, z])
+        
+        self._transform_coordinates(new_points)
+        await self._set_leg_angles()
+
+    async def calibrate(self, step: int) -> bool:
+        """Handle calibration step."""
+        logger.info("movement.calibrate", step=step)
+        # Reconstruct legacy calibration if point.txt logic is needed
+        # For now, just a placeholder that matches the protocol
         return True
     
     async def cleanup(self) -> None:

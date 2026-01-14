@@ -4,7 +4,7 @@
  */
 
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+const wsUrl = `${wsProtocol}//${window.location.host}/api/v1/ws/ws`;
 let socket = null;
 
 const logContainer = document.getElementById('log-container');

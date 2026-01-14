@@ -108,20 +108,31 @@ class MockServoController(IServoController):
             return 90  # Default neutral
         return self._servo_angles[channel]
     
-    def set_pulse_width(self, channel: int, pulse_us: int) -> None:
-        """Set servo pulse width in microseconds
-        
-        Args:
-            channel: Servo channel
-            pulse_us: Pulse width in microseconds
-        """
-        # Convert pulse to approximate angle
-        # Typical: 500us = 0°, 1500us = 90°, 2500us = 180°
-        angle = int((pulse_us - 500) * 180 / 2000)
-        self.set_angle(channel, angle)
-    
+    async def set_angles(self, angles: List[tuple]) -> None:
+        """Set multiple servo angles at once"""
+        for channel, angle in angles:
+            self.set_angle(channel, angle)
+
+    def set_pwm(self, channel: int, pulse_width: int) -> None:
+        """Set raw PWM pulse width"""
+        if not self._initialized:
+            raise HardwareNotAvailableError("Mock servo not initialized")
+        logger.debug("mock_servo.set_pwm", channel=channel, pulse_width=pulse_width)
+
+    def reset(self) -> None:
+        """Reset all servos to neutral position"""
+        for i in range(self.channels):
+            self.set_angle(i, 90)
+        logger.info("mock_servo.reset")
+
+    async def relax(self) -> None:
+        """Relax all servos"""
+        self._servo_angles.clear()
+        logger.info("mock_servo.relax")
+
     async def cleanup(self) -> None:
         """Cleanup mock resources"""
+        await self.relax()
         self._running = False
         self._initialized = False
         logger.info(
@@ -129,6 +140,9 @@ class MockServoController(IServoController):
             commands_executed=len(self._servo_history)
         )
     
+    def is_available(self) -> bool:
+        return self._initialized
+
     # Testing utilities
     
     def get_command_history(self) -> List[tuple]:
