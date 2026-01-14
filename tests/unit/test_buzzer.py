@@ -131,3 +131,23 @@ async def test_runtime_error_if_not_initialized(mocker):
     # b._initialized is False here
     with pytest.raises(RuntimeError, match="Buzzer not initialized"):
         await b.play_tone(440)
+
+async def test_startup_sound(buzzer, mock_gpio):
+    """Test that startup_sound plays the correct melody."""
+    _, pwm_instance = mock_gpio
+    pwm_instance.ChangeFrequency.reset_mock()
+
+    await buzzer.startup_sound()
+
+    # Startup melody has 3 notes
+    assert pwm_instance.ChangeFrequency.call_count == 3
+
+async def test_alert_sound(buzzer, mock_gpio):
+    """Test that alert_sound plays the correct tone sequence."""
+    _, pwm_instance = mock_gpio
+    pwm_instance.ChangeFrequency.reset_mock()
+
+    await buzzer.alert_sound()
+
+    # Alert sound has 3 loops of 2 tones = 6 calls
+    assert pwm_instance.ChangeFrequency.call_count == 6

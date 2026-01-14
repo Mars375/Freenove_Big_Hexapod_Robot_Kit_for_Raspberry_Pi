@@ -4,7 +4,11 @@ HC-SR04 Ultrasonic distance sensor driver.
 import asyncio
 import time
 from typing import Optional
-import RPi.GPIO as GPIO
+
+try:
+    import RPi.GPIO as GPIO
+except (RuntimeError, ModuleNotFoundError):
+    GPIO = None
 
 
 class UltrasonicSensor:
@@ -46,6 +50,8 @@ class UltrasonicSensor:
             trigger_pin: GPIO pin for trigger (BCM mode)
             echo_pin: GPIO pin for echo (BCM mode)
         """
+        if GPIO is None:
+            raise RuntimeError("RPi.GPIO library not found. Cannot control hardware.")
         self.trigger_pin = trigger_pin
         self.echo_pin = echo_pin
         self._initialized: bool = False
@@ -114,6 +120,7 @@ class UltrasonicSensor:
         while GPIO.input(self.echo_pin) == GPIO.LOW:
             if time.time() > timeout_time:
                 return None  # Timeout
+            await asyncio.sleep(0)  # Yield to event loop
 
         pulse_start = time.time()
 
@@ -123,6 +130,7 @@ class UltrasonicSensor:
         while GPIO.input(self.echo_pin) == GPIO.HIGH:
             if time.time() > timeout_time:
                 return None  # Timeout
+            await asyncio.sleep(0)
 
         pulse_end = time.time()
 

@@ -88,6 +88,23 @@ class BuzzerController:
             await self.play_tone(1000, duration, volume=0.5)
             await asyncio.sleep(gap)
 
+    async def startup_sound(self) -> None:
+        """Play startup melody (ascending tones)."""
+        melody = [
+            ('C5', 0.15),
+            ('E5', 0.15),
+            ('G5', 0.25)
+        ]
+        await self.play_melody(melody)
+
+    async def alert_sound(self) -> None:
+        """Play alert sound (alternating tones)."""
+        for _ in range(3):
+            await self.play_tone(800, 0.1)
+            await asyncio.sleep(0.05)
+            await self.play_tone(600, 0.1)
+            await asyncio.sleep(0.05)
+
     def stop(self) -> None:
         """Stop current sound immediately."""
         if self.pwm:
