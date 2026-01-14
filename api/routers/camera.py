@@ -51,12 +51,19 @@ async def gen_frames():
     factory = get_hardware_factory()
     camera_driver = await factory.get_camera()
     
+    empty_count = 0
     while True:
         try:
             frame = await camera_driver.get_frame()
             if frame:
+                empty_count = 0
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+            else:
+                empty_count += 1
+                if empty_count > 500: # Approx 5 seconds
+                    logger.warning("camera.stream_stalled", msg="No frames received for 5s")
+                    empty_count = 0
             await asyncio.sleep(0.01) # Yield to other tasks
         except Exception as e:
             logger.error("camera.feed_error", error=str(e))

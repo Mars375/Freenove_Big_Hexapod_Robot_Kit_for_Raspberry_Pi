@@ -97,11 +97,20 @@ class CameraDriver(IHardwareComponent):
 
     def _init_camera_cv2(self):
         """Internal camera init using OpenCV."""
-        self._camera = cv2.VideoCapture(0)
-        self._camera.set(cv2.CAP_PROP_FRAME_WIDTH, self._resolution[0])
-        self._camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self._resolution[1])
+        # Force V4L2 backend which is more reliable on Pi
+        self._camera = cv2.VideoCapture(0, cv2.CAP_V4L2)
         if not self._camera.isOpened():
-            raise RuntimeError("Could not open OpenCV video capture")
+            # Try without V4L2 just in case
+            self._camera = cv2.VideoCapture(0)
+            
+        if self._camera.isOpened():
+            self._camera.set(cv2.CAP_PROP_FRAME_WIDTH, self._resolution[0])
+            self._camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self._resolution[1])
+            actual_w = self._camera.get(cv2.CAP_PROP_FRAME_WIDTH)
+            actual_h = self._camera.get(cv2.CAP_PROP_FRAME_HEIGHT)
+            logger.info("camera.cv2_opened", requested=self._resolution, actual=(actual_w, actual_h))
+        else:
+            raise RuntimeError("Could not open OpenCV video capture on index 0")
 
     async def start_streaming(self):
         """Start JPEG streaming."""
@@ -154,14 +163,24 @@ class CameraDriver(IHardwareComponent):
             return b""
 
     def _get_frame_cv2(self) -> bytes:
+        if not self._camera:
+            return b""
+            
         ret, frame = self._camera.read()
         if not ret:
+            # Log failure occasionally to avoid spam
+            if not hasattr(self, "_last_fail_log"):
+                self._last_fail_log = 0
+            if time.time() - self._last_fail_log > 5:
+                logger.warning("camera.cv2_read_failed")
+                self._last_fail_log = time.time()
             return b""
+            
         if self._hflip:
             frame = cv2.flip(frame, 1)
         if self._vflip:
             frame = cv2.flip(frame, 0)
-        ret, buffer = cv2.imencode('.jpg', frame)
+        ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
         return buffer.tobytes() if ret else b""
 
     async def cleanup(self) -> None:
