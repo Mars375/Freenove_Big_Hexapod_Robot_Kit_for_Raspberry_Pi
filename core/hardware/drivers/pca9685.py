@@ -53,7 +53,7 @@ class PCA9685(IHardwareComponent):
             self._status = HardwareStatus.INITIALIZING
             
             # Reset
-            await self._i2c.write_byte_data(self._address, self.MODE1, 0x00)
+            self._i2c.write_byte_data(self._address, self.MODE1, 0x00)
             
             # Set frequency
             await self._set_pwm_freq(self._frequency)
@@ -91,16 +91,16 @@ class PCA9685(IHardwareComponent):
         prescale_val -= 1.0
         prescale = int(prescale_val + 0.5)
         
-        old_mode = await self._i2c.read_byte_data(self._address, self.MODE1)
+        old_mode = self._i2c.read_byte_data(self._address, self.MODE1)
         if old_mode is None:
             raise RuntimeError("Failed to read MODE1 register")
         
         new_mode = (old_mode & 0x7F) | self.SLEEP
-        await self._i2c.write_byte_data(self._address, self.MODE1, new_mode)
-        await self._i2c.write_byte_data(self._address, self.PRESCALE, prescale)
-        await self._i2c.write_byte_data(self._address, self.MODE1, old_mode)
+        self._i2c.write_byte_data(self._address, self.MODE1, new_mode)
+        self._i2c.write_byte_data(self._address, self.PRESCALE, prescale)
+        self._i2c.write_byte_data(self._address, self.MODE1, old_mode)
         await asyncio.sleep(0.005)
-        await self._i2c.write_byte_data(self._address, self.MODE1, old_mode | self.RESTART)
+        self._i2c.write_byte_data(self._address, self.MODE1, old_mode | self.RESTART)
     
     async def set_pwm(self, channel: int, on: int, off: int) -> None:
         """
@@ -114,10 +114,10 @@ class PCA9685(IHardwareComponent):
         if not (0 <= channel < 16):
             raise ValueError(f"Channel must be 0-15, got {channel}")
         
-        await self._i2c.write_byte_data(self._address, self.LED0_ON_L + 4 * channel, on & 0xFF)
-        await self._i2c.write_byte_data(self._address, self.LED0_ON_H + 4 * channel, on >> 8)
-        await self._i2c.write_byte_data(self._address, self.LED0_OFF_L + 4 * channel, off & 0xFF)
-        await self._i2c.write_byte_data(self._address, self.LED0_OFF_H + 4 * channel, off >> 8)
+        self._i2c.write_byte_data(self._address, self.LED0_ON_L + 4 * channel, on & 0xFF)
+        self._i2c.write_byte_data(self._address, self.LED0_ON_H + 4 * channel, on >> 8)
+        self._i2c.write_byte_data(self._address, self.LED0_OFF_L + 4 * channel, off & 0xFF)
+        self._i2c.write_byte_data(self._address, self.LED0_OFF_H + 4 * channel, off >> 8)
     
     async def set_servo_pulse(self, channel: int, pulse: int) -> None:
         """
@@ -138,10 +138,10 @@ class PCA9685(IHardwareComponent):
             on: Valeur ON (0-4095)
             off: Valeur OFF (0-4095)
         """
-        await self._i2c.write_byte_data(self._address, self.ALL_LED_ON_L, on & 0xFF)
-        await self._i2c.write_byte_data(self._address, self.ALL_LED_ON_H, on >> 8)
-        await self._i2c.write_byte_data(self._address, self.ALL_LED_OFF_L, off & 0xFF)
-        await self._i2c.write_byte_data(self._address, self.ALL_LED_OFF_H, off >> 8)
+        self._i2c.write_byte_data(self._address, self.ALL_LED_ON_L, on & 0xFF)
+        self._i2c.write_byte_data(self._address, self.ALL_LED_ON_H, on >> 8)
+        self._i2c.write_byte_data(self._address, self.ALL_LED_OFF_L, off & 0xFF)
+        self._i2c.write_byte_data(self._address, self.ALL_LED_OFF_H, off >> 8)
     
     def is_available(self) -> bool:
         """Vérifie si le PCA9685 est disponible."""
