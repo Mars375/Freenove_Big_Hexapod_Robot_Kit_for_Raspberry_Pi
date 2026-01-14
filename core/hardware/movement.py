@@ -208,7 +208,7 @@ class MovementController:
         
         # Send to servos using HAL
         try:
-        try:
+
             await self._servo.set_angle_async(leg.servo_pins[0], servo_angles[0])
             await self._servo.set_angle_async(leg.servo_pins[1], servo_angles[1])
             await self._servo.set_angle_async(leg.servo_pins[2], servo_angles[2])
