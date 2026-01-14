@@ -73,7 +73,8 @@ class MovementController:
     """
     
     # Default body height below neutral (mm)
-    DEFAULT_BODY_HEIGHT = -25.0
+    # More negative = lower body, less negative = higher body
+    DEFAULT_BODY_HEIGHT = -10.0
     
     # Initial neutral leg position
     NEUTRAL_POSITION = [140.0, 0.0, 0.0]
