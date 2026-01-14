@@ -99,7 +99,10 @@ class UltrasonicSensor(IHardwareComponent):
                         continue
                 
                 # Ultimate fallback to Mock
-                logger.warning("ultrasonic.mock_fallback", msg="All hardware factories failed, using Mock")
+                logger.warning(
+                    "ultrasonic.mock_fallback", 
+                    msg="All hardware factories failed. On Pi 4/5 with Python 3.13+, you MUST install 'lgpio' (e.g., sudo apt install python3-lgpio)."
+                )
                 from gpiozero.pins.mock import MockFactory
                 Device.pin_factory = MockFactory()
                 self._sensor = DistanceSensor(
