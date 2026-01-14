@@ -106,9 +106,16 @@ class CameraDriver(IHardwareComponent):
         if self._camera.isOpened():
             self._camera.set(cv2.CAP_PROP_FRAME_WIDTH, self._resolution[0])
             self._camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self._resolution[1])
+            # Set MJPEG format which is more efficient and often required for Pi cameras in V4L2
+            self._camera.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
+            
             actual_w = self._camera.get(cv2.CAP_PROP_FRAME_WIDTH)
             actual_h = self._camera.get(cv2.CAP_PROP_FRAME_HEIGHT)
             logger.info("camera.cv2_opened", requested=self._resolution, actual=(actual_w, actual_h))
+            
+            # Warm-up: discard first 5 frames
+            for _ in range(5):
+                self._camera.read()
         else:
             raise RuntimeError("Could not open OpenCV video capture on index 0")
 
