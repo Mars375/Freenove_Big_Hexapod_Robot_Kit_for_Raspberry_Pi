@@ -183,7 +183,7 @@ class MovementController:
         
         return (servo_coxa, servo_femur, servo_tibia)
     
-    def _set_leg_position(self, leg: Leg, x: float, y: float, z: float):
+    async def _set_leg_position(self, leg: Leg, x: float, y: float, z: float):
         """
         Move leg to target position using inverse kinematics
         
@@ -208,9 +208,10 @@ class MovementController:
         
         # Send to servos using HAL
         try:
-            self._servo.set_angle(leg.servo_pins[0], servo_angles[0])
-            self._servo.set_angle(leg.servo_pins[1], servo_angles[1])
-            self._servo.set_angle(leg.servo_pins[2], servo_angles[2])
+        try:
+            await self._servo.set_angle_async(leg.servo_pins[0], servo_angles[0])
+            await self._servo.set_angle_async(leg.servo_pins[1], servo_angles[1])
+            await self._servo.set_angle_async(leg.servo_pins[2], servo_angles[2])
         except Exception as e:
             logger.error(
                 "movement.servo_command_failed",
@@ -228,7 +229,8 @@ class MovementController:
         logger.info("movement.stand")
         
         for leg in self.legs:
-            self._set_leg_position(
+        for leg in self.legs:
+            await self._set_leg_position(
                 leg,
                 leg.neutral_x,
                 leg.neutral_y,
@@ -281,7 +283,7 @@ class MovementController:
                     target_z = self.body_height + offset[2]
                     
                     # Move leg
-                    self._set_leg_position(leg, target_x, target_y, target_z)
+                    await self._set_leg_position(leg, target_x, target_y, target_z)
                 
                 # Advance gait phase
                 self.gait.advance_phase(phase_delta)
@@ -402,7 +404,7 @@ class MovementController:
                 
                 # Apply to leg
                 new_z = self.body_height + z_offset
-                self._set_leg_position(leg, leg.neutral_x, leg.neutral_y, new_z)
+                await self._set_leg_position(leg, leg.neutral_x, leg.neutral_y, new_z)
             
             await asyncio.sleep(0.3)
             return True
