@@ -12,7 +12,7 @@ import os
 sys.path.append(os.getcwd())
 
 from core.hardware.factory import get_hardware_factory
-from core.hardware.movement import LEGS
+
 
 async def main():
     print("Initializing components...")

@@ -27,7 +27,7 @@ class ADC(IHardwareComponent):
             self._status = HardwareStatus.INITIALIZING
             
             # Test de communication avec un read simple
-            result = await self._i2c.read_byte(self._address)
+            result = self._i2c.read_byte(self._address)
             if result is None:
                 raise RuntimeError("Failed to communicate with ADC")
             
@@ -60,13 +60,13 @@ class ADC(IHardwareComponent):
         
         try:
             # Sélectionner le canal et activer l'ADC
-            await self._i2c.write_byte(self._address, 0x40 | channel)
+            self._i2c.write_byte(self._address, 0x40 | channel)
             
             # Lire la valeur (première lecture = ancienne valeur)
-            await self._i2c.read_byte(self._address)
+            self._i2c.read_byte(self._address)
             
             # Deuxième lecture = nouvelle valeur
-            value = await self._i2c.read_byte(self._address)
+            value = self._i2c.read_byte(self._address)
             return value
             
         except Exception as e:

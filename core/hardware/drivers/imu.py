@@ -44,14 +44,14 @@ class MPU6050(IHardwareComponent):
             self._status = HardwareStatus.INITIALIZING
             
             # Réveiller le MPU6050
-            await self._i2c.write_byte_data(self._address, self.PWR_MGMT_1, 0)
+            self._i2c.write_byte_data(self._address, self.PWR_MGMT_1, 0)
             await asyncio.sleep(0.1)
             
             # Configuration
-            await self._i2c.write_byte_data(self._address, self.SMPLRT_DIV, 7)
-            await self._i2c.write_byte_data(self._address, self.CONFIG, 0)
-            await self._i2c.write_byte_data(self._address, self.GYRO_CONFIG, 0)
-            await self._i2c.write_byte_data(self._address, self.ACCEL_CONFIG, 0)
+            self._i2c.write_byte_data(self._address, self.SMPLRT_DIV, 7)
+            self._i2c.write_byte_data(self._address, self.CONFIG, 0)
+            self._i2c.write_byte_data(self._address, self.GYRO_CONFIG, 0)
+            self._i2c.write_byte_data(self._address, self.ACCEL_CONFIG, 0)
             
             self._status = HardwareStatus.READY
             self.logger.info(f"MPU6050 initialized at 0x{self._address:02x}")
@@ -66,7 +66,8 @@ class MPU6050(IHardwareComponent):
         """Nettoyage du driver IMU."""
         try:
             # Mettre le MPU6050 en veille
-            await self._i2c.write_byte_data(self._address, self.PWR_MGMT_1, 0x40)
+            # Mettre le MPU6050 en veille
+            self._i2c.write_byte_data(self._address, self.PWR_MGMT_1, 0x40)
         except Exception as e:
             self.logger.error(f"Error during cleanup: {e}")
         finally:
@@ -83,8 +84,8 @@ class MPU6050(IHardwareComponent):
         Returns:
             Valeur signée du mot
         """
-        high = await self._i2c.read_byte_data(self._address, reg)
-        low = await self._i2c.read_byte_data(self._address, reg + 1)
+        high = self._i2c.read_byte_data(self._address, reg)
+        low = self._i2c.read_byte_data(self._address, reg + 1)
         
         if high is None or low is None:
             raise RuntimeError(f"Failed to read from register 0x{reg:02x}")
