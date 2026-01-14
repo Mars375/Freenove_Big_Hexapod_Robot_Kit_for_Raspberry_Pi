@@ -67,6 +67,8 @@ const App = () => {
     }
   };
 
+  const lastMoveRef = useRef(0);
+
   // Joysticks Initialization
   useEffect(() => {
     if (moveJoystickRef.current) {
@@ -79,11 +81,23 @@ const App = () => {
       });
 
       manager.on('move', (evt, data) => {
+        // Limit updates to 10Hz
+        const now = Date.now();
+        if (now - lastMoveRef.current < 100) return;
+        lastMoveRef.current = now;
+
         const rad = data.angle.radian;
         const dist = data.distance; // 0-75
-        const x = Math.round(Math.cos(rad) * 35 * (dist / 75));
-        const y = Math.round(Math.sin(rad) * 35 * (dist / 75));
-        sendCommand({ cmd: 'move', mode: 'custom', x, y, speed: 5 });
+        
+        // Joystick Up (90 deg) -> dist*sin(PI/2) = dist
+        const joyX = Math.cos(rad) * dist;
+        const joyY = Math.sin(rad) * dist;
+        
+        // Scale to robot max 35
+        const robotX = Math.round((joyY / 75) * 35);  // Forward
+        const robotY = Math.round((-joyX / 75) * 35); // Left/Right
+        
+        sendCommand({ cmd: 'move', mode: 'custom', x: robotX, y: robotY, speed: 5 });
       });
 
       manager.on('end', () => sendCommand({ cmd: 'stop' }));

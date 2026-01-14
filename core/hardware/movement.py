@@ -394,27 +394,36 @@ class MovementController:
             gait=gait_type, x=x, y=y, speed=speed, angle=angle
         )
         
-        # Stop any existing gait
+        gt = GaitType.TRIPOD if gait_type == "1" else GaitType.WAVE
+        
+        # If same gait type is already running, just update parameters
+        if (self._gait and self._gait_task and not self._gait_task.done() and 
+            getattr(self, '_current_gait_type', None) == gt):
+            self._gait.update_params(x, y, speed, angle, duration)
+            return
+
+        # Stop different or stale gait
         if self._gait:
             self._gait.stop()
             if self._gait_task and not self._gait_task.done():
-                await self._gait_task
+                try:
+                    await asyncio.wait_for(self._gait_task, timeout=0.1)
+                except asyncio.TimeoutError:
+                    pass
         
         # Create new gait executor
+        self._current_gait_type = gt
         self._gait = GaitExecutor(
             body_points=self.body_points,
             update_callback=self._update_servos
         )
-        
-        # Convert gait type
-        gt = GaitType.TRIPOD if gait_type == "1" else GaitType.WAVE
         
         # Execute gait continuously for duration
         self._gait_task = asyncio.create_task(
             self._gait.run_continuous(gt, x, y, speed, angle, duration)
         )
         
-        # Wait for completion
+        # Wait for completion (optional, since it's a task, but run_gait is expected to wait)
         await self._gait_task
     
     async def move(
@@ -439,12 +448,12 @@ class MovementController:
         try:
             logger.info("movement.move", mode=mode, speed=speed)
             
-            # Map mode to parameters
+            # Map mode to parameters (X = longitudinal, Y = lateral)
             params = {
-                "forward": (0, 25, 0),
-                "backward": (0, -25, 0),
-                "left": (-25, 0, 0),
-                "right": (25, 0, 0),
+                "forward": (25, 0, 0),
+                "backward": (-25, 0, 0),
+                "left": (0, 25, 0),
+                "right": (0, -25, 0),
                 "turn_left": (0, 0, 15),
                 "turn_right": (0, 0, -15),
                 "custom": (x, y, angle),

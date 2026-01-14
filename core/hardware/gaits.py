@@ -59,7 +59,22 @@ class GaitExecutor:
         
         # Working copy of points - persists across cycles for accumulation
         self._points = copy.deepcopy(body_points)
+        
+        # State for continuous movement
+        self.x = 0.0
+        self.y = 0.0
+        self.speed = 5
+        self.angle = 0.0
+        self.duration = 2.0
     
+    def update_params(self, x: float, y: float, speed: int, angle: float, duration: float = 2.0) -> None:
+        """Update movement parameters on the fly."""
+        self.x = max(-35, min(35, x))
+        self.y = max(-35, min(35, y))
+        self.speed = max(2, min(10, speed))
+        self.angle = angle
+        self.duration = duration
+        logger.debug("gait.params_updated", x=self.x, y=self.y, speed=self.speed, angle=self.angle)
     @staticmethod
     def _map_speed_to_frames(speed: int, gait_type: GaitType) -> int:
         """Map speed (2-10) to frame count.
@@ -247,15 +262,7 @@ class GaitExecutor:
         angle: float = 0,
         duration: float = 2.0
     ) -> None:
-        """Run gait continuously for specified duration.
-        
-        Args:
-            gait_type: TRIPOD or WAVE
-            x, y: Movement direction
-            speed: 2-10
-            angle: Rotation
-            duration: How long to run (seconds)
-        """
+        """Run gait continuously, using dynamic parameters."""
         logger.info(
             f"gait.{gait_type.name.lower()}.start",
             x=x, y=y, speed=speed, angle=angle
@@ -264,21 +271,26 @@ class GaitExecutor:
         self._running = True
         self.reset_points()
         
-        x = max(-35, min(35, x))
-        y = max(-35, min(35, y))
-        speed = max(2, min(10, speed))
+        # Initial parameters
+        self.update_params(x, y, speed, angle, duration)
         
         start_time = asyncio.get_event_loop().time()
         
         while self._running:
+            # Check duration - use current self.duration which might have been updated
             elapsed = asyncio.get_event_loop().time() - start_time
-            if elapsed >= duration:
+            if elapsed >= self.duration:
                 break
-            
+                
+            # Use current internal parameters for each cycle
             if gait_type == GaitType.TRIPOD:
-                await self.execute_tripod_cycle(x, y, speed, angle)
+                await self.execute_tripod_cycle(self.x, self.y, self.speed, self.angle)
             else:
-                await self.execute_wave_cycle(x, y, speed, angle)
+                await self.execute_wave_cycle(self.x, self.y, self.speed, self.angle)
+            
+            # If everything is zero, don't hog CPU in busy loop
+            if self.x == 0 and self.y == 0 and self.angle == 0:
+                await asyncio.sleep(0.1)
         
         logger.info(f"gait.{gait_type.name.lower()}.complete")
     
