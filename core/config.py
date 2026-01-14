@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     api_key: str = Field(default="dev-key-change-in-production", description="API key")
     jwt_secret: str = Field(default="dev-secret-change-in-production", description="JWT secret")
     allowed_origins: list[str] = Field(
-        default=["http://localhost:3000", "http://localhost:8000"],
+        default=["*"],
         description="CORS allowed origins"
     )
     
