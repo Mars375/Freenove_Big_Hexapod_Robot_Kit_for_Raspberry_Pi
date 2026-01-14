@@ -1,70 +1,85 @@
-"""Modern hexapod movement controller with HAL"""
+"""Modern hexapod movement controller with HAL.
+
+This module provides the high-level movement controller that:
+1. Manages 6 legs with proper coordinate transforms
+2. Applies calibration offsets for accurate positioning
+3. Executes gaits via the GaitExecutor
+4. Communicates with servos via IServoController
+"""
 import asyncio
 import math
-from typing import Tuple, Dict, List, Optional
+import os
+from typing import Tuple, List, Optional, Dict, Any
+from dataclasses import dataclass, field
 import structlog
 
 from core.exceptions import HardwareNotAvailableError, CommandExecutionError
 from core.hardware.interfaces import IServoController
-from core.hardware.kinematics import LegKinematics
-from core.hardware.gaits import GaitController
+from core.hardware.kinematics import HexapodKinematics
+from core.hardware.gaits import GaitExecutor, GaitType, GaitConfig
 
 logger = structlog.get_logger()
 
 
+# Leg mounting angles (degrees from body X-axis)
+# These transform body-frame movements into leg-local coordinates
+LEG_ANGLES = [54, 0, -54, -126, 180, 126]
+
+# Leg body offsets for coordinate transform
+# These account for the physical offset of each leg from body center
+LEG_OFFSETS = [94, 85, 94, 94, 85, 94]
+
+# Servo channel mapping for each leg
+# [coxa_channel, femur_channel, tibia_channel]
+SERVO_MAPPING = [
+    [15, 14, 13],  # Leg 0 (Right Front)
+    [12, 11, 10],  # Leg 1 (Right Middle)
+    [9, 8, 31],    # Leg 2 (Right Rear)
+    [22, 23, 27],  # Leg 3 (Left Rear)
+    [19, 20, 21],  # Leg 4 (Left Middle)
+    [16, 17, 18],  # Leg 5 (Left Front)
+]
+
+
+@dataclass
 class Leg:
-    """Single leg with position, angles, and servo mappings"""
+    """Single leg configuration and state."""
     
-    def __init__(
-        self, 
-        leg_id: int, 
-        servo_pins: List[int], 
-        body_offset: Tuple[float, float],
-        angle_offset: Tuple[float, float] = (0.0, 0.0),
-        mirror: bool = False
-    ):
-        """
-        Initialize leg
-        
-        Args:
-            leg_id: Leg index (0-5)
-            servo_pins: [coxa_pin, femur_pin, tibia_pin]
-            body_offset: (x, y) position relative to body center in mm
-            angle_offset: (horizontal, vertical) angle offsets in degrees
-            mirror: True for left side legs (inverse femur/tibia mapping)
-        """
-        self.id = leg_id
-        self.servo_pins = servo_pins
-        self.body_offset = body_offset
-        self.angle_offset = angle_offset
-        self.mirror = mirror
-        
-        # Neutral standing position in leg frame
-        self.neutral_x = 140.0  # mm
-        self.neutral_y = 0.0
-        self.neutral_z = 0.0
-        
-        # Current state
-        self.position = [self.neutral_x, self.neutral_y, self.neutral_z]
-        self.angles = [90.0, 90.0, 90.0]
-        
-        # Kinematics
-        self.kinematics = LegKinematics()
+    id: int
+    servo_pins: List[int]
+    mount_angle: float  # Degrees from body X-axis
+    offset: float       # Distance offset for transform
+    is_left: bool       # True for left side legs (3, 4, 5)
+    
+    # Current state
+    position: List[float] = field(default_factory=lambda: [140.0, 0.0, 0.0])
+    angles: List[int] = field(default_factory=lambda: [90, 0, 0])
 
 
 class MovementController:
-    """Modern hexapod movement controller with full gait support
+    """Modern hexapod movement controller with full gait support.
     
     Uses dependency injection for servo controller, enabling:
     - Hardware abstraction
     - Easy testing with mocks
     - Multiple servo implementations
     - Clean separation of concerns
+    
+    The controller maintains:
+    - Body points: foot positions relative to body center
+    - Leg positions: foot positions in leg-local frame
+    - Calibration angles: per-leg servo offsets from point.txt
+    - Current angles: actual servo angles being commanded
     """
     
+    # Default body height below neutral (mm)
+    DEFAULT_BODY_HEIGHT = -25.0
+    
+    # Initial neutral leg position
+    NEUTRAL_POSITION = [140.0, 0.0, 0.0]
+    
     def __init__(self, servo_controller: Optional[IServoController] = None):
-        """
-        Initialize movement controller
+        """Initialize movement controller.
         
         Args:
             servo_controller: Servo controller implementation (injected)
@@ -76,55 +91,224 @@ class MovementController:
         self._gait_task = None
         
         # Body parameters
-        self.body_height = -25.0  # mm below neutral
+        self.body_height = self.DEFAULT_BODY_HEIGHT
         
-        # Define all 6 legs with proper configuration
-        # Leg layout (top view):
-        #     0   5
-        #   1   ○   4
-        #     2   3
-        
-        self.legs = [
-            # Right side (0, 1, 2)
-            # Leg 0 (Right Front): Servos 15, 14, 13 (Board 1 @ 0x41)
-            Leg(0, [15, 14, 13], (137.1, 189.4), (0, 0), False),
-            
-            # Leg 1 (Right Middle): Servos 12, 11, 10 (Board 1 @ 0x41)
-            Leg(1, [12, 11, 10], (225.0, 0.0), (0, 0), False),
-            
-            # Leg 2 (Right Rear): Servos 9, 8, 31 (Mixed: 9,8 @ 0x41, 31 @ 0x40)
-            # Board 1 channels 9,8. Board 0 channel 15 (mapped to 31 virtual)
-            Leg(2, [9, 8, 31], (137.1, -189.4), (0, 0), False),
-            
-            # Left side (3, 4, 5)  
-            # Leg 3 (Left Rear): Servos 22, 23, 27 (Board 0 @ 0x40)
-            # Virtual IDs: 22 (=6+16), 23 (=7+16), 27 (=11+16)
-            Leg(3, [22, 23, 27], (-137.1, -189.4), (0, 0), True),
-            
-            # Leg 4 (Left Middle): Servos 19, 20, 21 (Board 0 @ 0x40)
-            # Virtual IDs: 19 (=3+16), 20 (=4+16), 21 (=5+16)
-            Leg(4, [19, 20, 21], (-225.0, 0.0), (0, 0), True),
-            
-            # Leg 5 (Left Front): Servos 16, 17, 18 (Board 0 @ 0x40)
-            # Virtual IDs: 16 (=0+16), 17 (=1+16), 18 (=2+16)
-            Leg(5, [16, 17, 18], (-137.1, 189.4), (0, 0), True),
+        # Body points: where feet are relative to body center
+        # These define the "standing" position
+        self.body_points = [
+            [137.1, 189.4, self.body_height],
+            [225.0, 0.0, self.body_height],
+            [137.1, -189.4, self.body_height],
+            [-137.1, -189.4, self.body_height],
+            [-225.0, 0.0, self.body_height],
+            [-137.1, 189.4, self.body_height],
         ]
         
-        # Gait controller
-        self.gait = GaitController(step_height=20.0, stride_length=30.0)
+        # Leg positions: feet in leg-local frame
+        self.leg_positions = [
+            [140.0, 0.0, 0.0] for _ in range(6)
+        ]
+        
+        # Calibration data
+        self.calibration_leg_positions = self._read_calibration()
+        self.calibration_angles = [[0, 0, 0] for _ in range(6)]
+        self.current_angles = [[90, 0, 0] for _ in range(6)]
+        
+        # Initialize legs
+        self.legs = [
+            Leg(
+                id=i,
+                servo_pins=SERVO_MAPPING[i],
+                mount_angle=LEG_ANGLES[i],
+                offset=LEG_OFFSETS[i],
+                is_left=(i >= 3)
+            )
+            for i in range(6)
+        ]
+        
+        # Kinematics engine
+        self.kinematics = HexapodKinematics()
+        
+        # Gait executor (created on first use)
+        self._gait: Optional[GaitExecutor] = None
+        
+        # Apply initial calibration
+        self._calibrate()
         
         logger.info(
             "movement_controller.created",
             has_servo=servo_controller is not None
         )
     
-    def set_servo_controller(self, servo_controller: IServoController):
-        """Set servo controller after initialization (for lazy injection)"""
+    def _read_calibration(self) -> List[List[int]]:
+        """Read calibration data from point.txt.
+        
+        Returns:
+            List of [x, y, z] calibration offsets for each leg
+        """
+        default = [[140, 0, 0] for _ in range(6)]
+        
+        try:
+            # Try current directory first, then legacy location
+            for path in ["point.txt", "legacy/Code/Server/point.txt"]:
+                if os.path.exists(path):
+                    with open(path, "r") as f:
+                        lines = f.readlines()
+                        data = []
+                        for line in lines:
+                            line = line.strip()
+                            if line:
+                                parts = line.split("\t")
+                                if len(parts) >= 3:
+                                    data.append([int(p) for p in parts[:3]])
+                        if len(data) >= 6:
+                            logger.info("movement.calibration_loaded", path=path)
+                            return data[:6]
+            
+            logger.warning("movement.no_calibration_file")
+            return default
+            
+        except Exception as e:
+            logger.warning("movement.calibration_read_failed", error=str(e))
+            return default
+    
+    def _calibrate(self) -> None:
+        """Calculate calibration angles from calibration positions.
+        
+        This converts the calibration foot positions to joint angles
+        and computes the offset from neutral required for each joint.
+        """
+        # Reset to neutral leg positions
+        self.leg_positions = [[140.0, 0.0, 0.0] for _ in range(6)]
+        
+        # Calculate angles for calibration positions
+        for i in range(6):
+            cal_pos = self.calibration_leg_positions[i]
+            # Note: legacy uses -z, x, y order for coordinate_to_angle
+            result = self.kinematics.inverse(-cal_pos[2], cal_pos[0], cal_pos[1])
+            if result:
+                self.calibration_angles[i] = list(result)
+        
+        # Calculate neutral angles
+        neutral_angles = [[0, 0, 0] for _ in range(6)]
+        for i in range(6):
+            pos = self.leg_positions[i]
+            result = self.kinematics.inverse(-pos[2], pos[0], pos[1])
+            if result:
+                neutral_angles[i] = list(result)
+        
+        # Compute offsets
+        for i in range(6):
+            self.calibration_angles[i][0] -= neutral_angles[i][0]
+            self.calibration_angles[i][1] -= neutral_angles[i][1]
+            self.calibration_angles[i][2] -= neutral_angles[i][2]
+        
+        logger.debug("movement.calibrated", offsets=self.calibration_angles)
+    
+    def _transform_coordinates(self, points: List[List[float]]) -> None:
+        """Transform body-frame points to leg-local coordinates.
+        
+        This applies the rotation for each leg's mounting angle and
+        subtracts the leg offset to get positions in the leg's local frame.
+        
+        Args:
+            points: List of 6 body-frame positions [[x, y, z], ...]
+        """
+        for i, leg in enumerate(self.legs):
+            angle_rad = math.radians(leg.mount_angle)
+            cos_a = math.cos(angle_rad)
+            sin_a = math.sin(angle_rad)
+            
+            # Rotate point to leg-local frame
+            x_local = points[i][0] * cos_a + points[i][1] * sin_a - leg.offset
+            y_local = -points[i][0] * sin_a + points[i][1] * cos_a
+            z_local = points[i][2] - 14  # Z offset for leg mounting height
+            
+            self.leg_positions[i] = [x_local, y_local, z_local]
+    
+    async def _set_leg_angles(self) -> None:
+        """Calculate and send servo angles for current leg positions.
+        
+        This is the core function that:
+        1. Computes IK for each leg position
+        2. Applies calibration offsets
+        3. Applies left/right mirroring
+        4. Sends to servos
+        """
+        if not self._servo:
+            return
+        
+        # Check validity first
+        if not self.kinematics.check_validity(self.leg_positions):
+            logger.warning("movement.invalid_positions")
+            return
+        
+        # Calculate angles for each leg
+        for i in range(6):
+            pos = self.leg_positions[i]
+            # Legacy uses -z, x, y order
+            result = self.kinematics.inverse(-pos[2], pos[0], pos[1])
+            if result:
+                self.current_angles[i] = list(result)
+        
+        # Apply calibration and mirroring, then send to servos
+        for i in range(3):
+            # Right side legs (0, 1, 2)
+            right_angles = [
+                self._clamp(
+                    self.current_angles[i][0] + self.calibration_angles[i][0],
+                    0, 180
+                ),
+                self._clamp(
+                    90 - (self.current_angles[i][1] + self.calibration_angles[i][1]),
+                    0, 180
+                ),
+                self._clamp(
+                    self.current_angles[i][2] + self.calibration_angles[i][2],
+                    0, 180
+                ),
+            ]
+            
+            # Left side legs (3, 4, 5)
+            left_idx = i + 3
+            left_angles = [
+                self._clamp(
+                    self.current_angles[left_idx][0] + self.calibration_angles[left_idx][0],
+                    0, 180
+                ),
+                self._clamp(
+                    90 + self.current_angles[left_idx][1] + self.calibration_angles[left_idx][1],
+                    0, 180
+                ),
+                self._clamp(
+                    180 - (self.current_angles[left_idx][2] + self.calibration_angles[left_idx][2]),
+                    0, 180
+                ),
+            ]
+            
+            # Send to servos
+            leg = self.legs[i]
+            await self._servo.set_angle_async(leg.servo_pins[0], right_angles[0])
+            await self._servo.set_angle_async(leg.servo_pins[1], right_angles[1])
+            await self._servo.set_angle_async(leg.servo_pins[2], right_angles[2])
+            
+            left_leg = self.legs[left_idx]
+            await self._servo.set_angle_async(left_leg.servo_pins[0], left_angles[0])
+            await self._servo.set_angle_async(left_leg.servo_pins[1], left_angles[1])
+            await self._servo.set_angle_async(left_leg.servo_pins[2], left_angles[2])
+    
+    @staticmethod
+    def _clamp(value: float, min_val: float, max_val: float) -> int:
+        """Clamp value to range and return as integer."""
+        return int(max(min_val, min(max_val, value)))
+    
+    def set_servo_controller(self, servo_controller: IServoController) -> None:
+        """Set servo controller after initialization (for lazy injection)."""
         self._servo = servo_controller
         logger.info("movement_controller.servo_set")
-        
-    async def initialize(self):
-        """Initialize servo controller and stand up"""
+    
+    async def initialize(self) -> None:
+        """Initialize servo controller and stand up."""
         if not self._servo:
             raise HardwareNotAvailableError(
                 "No servo controller set. Use set_servo_controller() first."
@@ -148,166 +332,106 @@ class MovementController:
     
     @property
     def is_available(self) -> bool:
-        """Check if controller is ready to use"""
+        """Check if controller is ready to use."""
         return (
-            self._initialized and 
-            self._servo is not None and 
+            self._initialized and
+            self._servo is not None and
             self._servo.is_available()
         )
     
-    def _servo_angles_from_leg_angles(
-        self, 
-        leg: Leg, 
-        coxa: float, 
-        femur: float, 
-        tibia: float
-    ) -> Tuple[int, int, int]:
-        """
-        Convert leg angles to servo angles accounting for mounting orientation
+    async def _update_servos(self, points: List[List[float]]) -> None:
+        """Callback for gait executor to update servo positions.
         
         Args:
-            leg: Leg object
-            coxa, femur, tibia: Joint angles in degrees
-            
-        Returns:
-            Tuple of servo angles (0-180)
+            points: New body-frame foot positions
         """
-        if leg.mirror:  # Left side
-            servo_coxa = int(max(0, min(180, 180 - coxa)))
-            servo_femur = int(max(0, min(180, 90 + femur)))
-            servo_tibia = int(max(0, min(180, 180 - tibia)))
-        else:  # Right side
-            servo_coxa = int(max(0, min(180, coxa)))
-            servo_femur = int(max(0, min(180, 90 - femur)))
-            servo_tibia = int(max(0, min(180, tibia)))
-        
-        return (servo_coxa, servo_femur, servo_tibia)
+        self._transform_coordinates(points)
+        await self._set_leg_angles()
     
-    async def _set_leg_position(self, leg: Leg, x: float, y: float, z: float):
-        """
-        Move leg to target position using inverse kinematics
-        
-        Args:
-            leg: Leg to move
-            x, y, z: Target position in leg coordinate frame (mm)
-        """
-        if not self._servo:
-            return
-        
-        # Calculate joint angles
-        angles = leg.kinematics.inverse(x, y, z)
-        
-        if angles is None:
-            logger.warning("movement.unreachable_position", leg_id=leg.id, x=x, y=y, z=z)
-            return
-        
-        coxa, femur, tibia = angles
-        
-        # Convert to servo angles
-        servo_angles = self._servo_angles_from_leg_angles(leg, coxa, femur, tibia)
-        
-        # Send to servos using HAL
-        try:
-
-            await self._servo.set_angle_async(leg.servo_pins[0], servo_angles[0])
-            await self._servo.set_angle_async(leg.servo_pins[1], servo_angles[1])
-            await self._servo.set_angle_async(leg.servo_pins[2], servo_angles[2])
-        except Exception as e:
-            logger.error(
-                "movement.servo_command_failed",
-                leg_id=leg.id,
-                error=str(e)
-            )
-            raise
-        
-        # Update state
-        leg.position = [x, y, z]
-        leg.angles = [coxa, femur, tibia]
-    
-    async def stand(self):
-        """Stand in neutral position"""
+    async def stand(self) -> None:
+        """Stand in neutral position."""
         logger.info("movement.stand")
         
-        for leg in self.legs:
-        for leg in self.legs:
-            await self._set_leg_position(
-                leg,
-                leg.neutral_x,
-                leg.neutral_y,
-                self.body_height
-            )
+        # Reset to default body points
+        self.body_points = [
+            [137.1, 189.4, self.body_height],
+            [225.0, 0.0, self.body_height],
+            [137.1, -189.4, self.body_height],
+            [-137.1, -189.4, self.body_height],
+            [-225.0, 0.0, self.body_height],
+            [-137.1, 189.4, self.body_height],
+        ]
         
+        self._transform_coordinates(self.body_points)
+        await self._set_leg_angles()
         await asyncio.sleep(0.5)
     
-    async def _execute_gait(
-        self, 
-        gait_type: str, 
-        direction: Tuple[float, float], 
-        speed: float,
-        duration: float = 5.0
-    ):
-        """
-        Execute continuous gait pattern
+    async def run_gait(
+        self,
+        gait_type: str = "1",
+        x: float = 0,
+        y: float = 25,
+        speed: int = 5,
+        angle: float = 0,
+        duration: float = 2.0
+    ) -> None:
+        """Execute a gait pattern.
         
         Args:
-            gait_type: "tripod", "wave", or "ripple"
-            direction: (x, y) movement direction (unit vector)
-            speed: Movement speed factor (0-10)
+            gait_type: "1" for tripod, "2" for wave
+            x: Forward/backward movement (-35 to 35)
+            y: Left/right movement (-35 to 35)
+            speed: Speed 2-10
+            angle: Rotation angle in degrees
             duration: How long to walk (seconds)
         """
-        logger.info("movement.execute_gait", type=gait_type, direction=direction, speed=speed)
+        if not self.is_available:
+            raise HardwareNotAvailableError("Movement controller not initialized")
         
-        self._moving = True
-        self.gait.reset_phase()
+        logger.info(
+            "movement.run_gait",
+            gait=gait_type, x=x, y=y, speed=speed, angle=angle
+        )
         
-        # Speed to phase increment mapping
-        phase_delta = 0.02 * (speed / 5.0)  # Adjust multiplier as needed
+        # Stop any existing gait
+        if self._gait:
+            self._gait.stop()
+            if self._gait_task and not self._gait_task.done():
+                await self._gait_task
         
-        start_time = asyncio.get_event_loop().time()
+        # Create new gait executor
+        self._gait = GaitExecutor(
+            body_points=self.body_points,
+            update_callback=self._update_servos,
+            config=GaitConfig(step_height=40.0)
+        )
         
-        try:
-            while self._moving and (asyncio.get_event_loop().time() - start_time) < duration:
-                # Calculate target position for each leg
-                for leg in self.legs:
-                    # Get trajectory offset from gait
-                    offset = self.gait.calculate_foot_trajectory(
-                        leg.id,
-                        self.gait.phase,
-                        gait_type,
-                        direction
-                    )
-                    
-                    # Apply to neutral position
-                    target_x = leg.neutral_x + offset[0]
-                    target_y = leg.neutral_y + offset[1]
-                    target_z = self.body_height + offset[2]
-                    
-                    # Move leg
-                    await self._set_leg_position(leg, target_x, target_y, target_z)
-                
-                # Advance gait phase
-                self.gait.advance_phase(phase_delta)
-                
-                # Control loop rate (50Hz)
-                await asyncio.sleep(0.02)
-                
-        except Exception as e:
-            logger.error("movement.gait_execution_failed", error=str(e))
-            self._moving = False
-            raise
+        # Convert gait type
+        gt = GaitType.TRIPOD if gait_type == "1" else GaitType.WAVE
         
-        self._moving = False
-        logger.info("movement.gait_completed")
+        # Execute gait
+        self._gait_task = asyncio.create_task(
+            self._gait.execute(gt, x, y, speed, angle, duration)
+        )
+        
+        # Wait for completion
+        await self._gait_task
     
-    async def move(self, mode: str, x: int, y: int, speed: int, angle: int) -> bool:
-        """
-        Execute movement command
+    async def move(
+        self,
+        mode: str,
+        x: int = 0,
+        y: int = 0,
+        speed: int = 5,
+        angle: int = 0
+    ) -> bool:
+        """Execute movement command.
         
         Args:
             mode: "forward", "backward", "left", "right", "turn_left", "turn_right"
-            x, y: Reserved for future use (joystick input)
-            speed: Speed factor (1-10)
-            angle: Turn angle (degrees) - reserved
+            x, y: Reserved for future use
+            speed: Speed factor (2-10)
+            angle: Turn angle (degrees)
         """
         if not self.is_available:
             raise HardwareNotAvailableError("Movement controller not initialized")
@@ -315,27 +439,25 @@ class MovementController:
         try:
             logger.info("movement.move", mode=mode, speed=speed)
             
-            # Stop any ongoing movement
-            if self._gait_task and not self._gait_task.done():
-                self._moving = False
-                await self._gait_task
-            
-            # Map mode to direction vector
-            direction_map = {
-                "forward": (1.0, 0.0),
-                "backward": (-1.0, 0.0),
-                "left": (0.0, 1.0),
-                "right": (0.0, -1.0),
-                "turn_left": (0.5, 0.5),  # Differential turning
-                "turn_right": (0.5, -0.5),
+            # Map mode to parameters
+            params = {
+                "forward": (0, 25, 0),
+                "backward": (0, -25, 0),
+                "left": (-25, 0, 0),
+                "right": (25, 0, 0),
+                "turn_left": (0, 0, 15),
+                "turn_right": (0, 0, -15),
             }
             
-            direction = direction_map.get(mode, (1.0, 0.0))
+            x_val, y_val, angle_val = params.get(mode, (0, 25, 0))
             
-            # Use tripod gait (fastest and most stable for forward motion)
-            # Could be configurable based on terrain/requirements
-            self._gait_task = asyncio.create_task(
-                self._execute_gait("tripod", direction, speed, duration=2.0)
+            await self.run_gait(
+                gait_type="1",  # Tripod
+                x=x_val,
+                y=y_val,
+                speed=speed,
+                angle=angle_val,
+                duration=2.0
             )
             
             return True
@@ -345,21 +467,22 @@ class MovementController:
             raise CommandExecutionError(f"Move failed: {e}")
     
     async def stop(self) -> bool:
-        """Emergency stop"""
+        """Stop all movement."""
         if not self.is_available:
             raise HardwareNotAvailableError("Movement controller not initialized")
         
         try:
             logger.info("movement.stop")
             
-            # Signal stop
-            self._moving = False
+            # Stop gait
+            if self._gait:
+                self._gait.stop()
             
             # Wait for gait task to finish
             if self._gait_task and not self._gait_task.done():
                 await self._gait_task
             
-            # Return to standing position
+            # Return to standing
             await self.stand()
             
             return True
@@ -368,63 +491,119 @@ class MovementController:
             logger.error("movement.stop_failed", error=str(e))
             raise CommandExecutionError(f"Stop failed: {e}")
     
-    async def set_attitude(self, roll: float, pitch: float, yaw: float) -> bool:
-        """
-        Set robot body attitude
+    async def set_position(self, x: float, y: float, z: float) -> bool:
+        """Move body to specified position offset.
         
         Args:
-            roll: Roll angle in degrees (-15 to +15)
-            pitch: Pitch angle in degrees (-15 to +15)  
-            yaw: Yaw angle in degrees (-15 to +15)
+            x: X offset (-40 to 40)
+            y: Y offset (-40 to 40)
+            z: Z offset (-20 to 20)
         """
         if not self.is_available:
             raise HardwareNotAvailableError("Movement controller not initialized")
         
-        try:
-            logger.info("movement.set_attitude", roll=roll, pitch=pitch, yaw=yaw)
-            
-            # Convert to radians
-            roll_rad = math.radians(roll)
-            pitch_rad = math.radians(pitch)
-            yaw_rad = math.radians(yaw)
-            
-            # Apply rotation matrix to each leg's body offset
-            for leg in self.legs:
-                bx, by = leg.body_offset
-                
-                # Rotate body offset by yaw
-                x_rot = bx * math.cos(yaw_rad) - by * math.sin(yaw_rad)
-                y_rot = bx * math.sin(yaw_rad) + by * math.cos(yaw_rad)
-                
-                # Calculate z offset from roll and pitch
-                z_offset = (
-                    x_rot * math.sin(pitch_rad) +
-                    y_rot * math.sin(roll_rad)
-                )
-                
-                # Apply to leg
-                new_z = self.body_height + z_offset
-                await self._set_leg_position(leg, leg.neutral_x, leg.neutral_y, new_z)
-            
-            await asyncio.sleep(0.3)
-            return True
-            
-        except Exception as e:
-            logger.error("movement.set_attitude_failed", error=str(e))
-            raise CommandExecutionError(f"Attitude set failed: {e}")
+        logger.info("movement.set_position", x=x, y=y, z=z)
+        
+        # Clamp values
+        x = max(-40, min(40, x))
+        y = max(-40, min(40, y))
+        z = max(-20, min(20, z))
+        
+        # Update body points
+        for i in range(6):
+            self.body_points[i][0] -= x
+            self.body_points[i][1] -= y
+            self.body_points[i][2] = -30 - z
+        
+        self.body_height = self.body_points[0][2]
+        
+        self._transform_coordinates(self.body_points)
+        await self._set_leg_angles()
+        
+        return True
     
-    async def cleanup(self):
-        """Cleanup resources"""
+    async def set_attitude(self, roll: float, pitch: float, yaw: float) -> bool:
+        """Set body attitude (rotation).
+        
+        Args:
+            roll: Roll angle (-15 to 15)
+            pitch: Pitch angle (-15 to 15)
+            yaw: Yaw angle (-15 to 15)
+        """
+        if not self.is_available:
+            raise HardwareNotAvailableError("Movement controller not initialized")
+        
+        logger.info("movement.set_attitude", roll=roll, pitch=pitch, yaw=yaw)
+        
+        # Clamp values
+        roll = max(-15, min(15, roll))
+        pitch = max(-15, min(15, pitch))
+        yaw = max(-15, min(15, yaw))
+        
+        # Convert to radians
+        roll_rad = math.radians(roll)
+        pitch_rad = math.radians(pitch)
+        yaw_rad = math.radians(yaw)
+        
+        # Rotation matrices
+        rx = [
+            [1, 0, 0],
+            [0, math.cos(pitch_rad), -math.sin(pitch_rad)],
+            [0, math.sin(pitch_rad), math.cos(pitch_rad)]
+        ]
+        ry = [
+            [math.cos(roll_rad), 0, -math.sin(roll_rad)],
+            [0, 1, 0],
+            [math.sin(roll_rad), 0, math.cos(roll_rad)]
+        ]
+        rz = [
+            [math.cos(yaw_rad), -math.sin(yaw_rad), 0],
+            [math.sin(yaw_rad), math.cos(yaw_rad), 0],
+            [0, 0, 1]
+        ]
+        
+        # Footpoint structure
+        footpoints = [
+            [137.1, 189.4, 0],
+            [225.0, 0.0, 0],
+            [137.1, -189.4, 0],
+            [-137.1, -189.4, 0],
+            [-225.0, 0.0, 0],
+            [-137.1, 189.4, 0],
+        ]
+        
+        # Apply rotation to each footpoint
+        position = [0, 0, self.body_height]
+        new_points = []
+        
+        for fp in footpoints:
+            # Combined rotation: R = Rx * Ry * Rz * fp + position
+            # Simplified for small angles
+            x = position[0] + fp[0] * math.cos(yaw_rad) - fp[1] * math.sin(yaw_rad)
+            y = position[1] + fp[0] * math.sin(yaw_rad) + fp[1] * math.cos(yaw_rad)
+            z = position[2] + fp[0] * math.sin(pitch_rad) + fp[1] * math.sin(roll_rad)
+            
+            new_points.append([x, y, z])
+        
+        self._transform_coordinates(new_points)
+        await self._set_leg_angles()
+        
+        await asyncio.sleep(0.3)
+        return True
+    
+    async def cleanup(self) -> None:
+        """Cleanup resources."""
         logger.info("movement_controller.cleanup")
         
-        if self._moving:
-            await self.stop()
+        if self._gait:
+            self._gait.stop()
+        
+        if self._gait_task and not self._gait_task.done():
+            await self._gait_task
         
         if self._servo:
             try:
-                # Return to standing position
                 await self.stand()
-                # Cleanup servo hardware
                 await self._servo.cleanup()
             except Exception as e:
                 logger.error("movement_controller.cleanup_failed", error=str(e))
