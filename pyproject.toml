@@ -1,58 +1,76 @@
-[tool.poetry]
-name = "hexapod-robot"
-version = "2.0.0"
-description = "Freenove Big Hexapod Robot - Modernized & Orion-SRE Integrated"
-authors = ["Mars375 <your-email@example.com>"]
-readme = "README.md"
-license = "CC-BY-NC-SA-3.0"
-
-[tool.poetry.dependencies]
-python = "^3.11"
-fastapi = "^0.109.0"
-uvicorn = {extras = ["standard"], version = "^0.27.0"}
-pydantic = "^2.5.3"
-pydantic-settings = "^2.1.0"
-structlog = "^24.1.0"
-python-dotenv = "^1.0.0"
-aiofiles = "^23.2.1"
-httpx = "^0.26.0"
-prometheus-client = "^0.19.0"
-redis = "^5.0.1"
-hiredis = "^2.3.2"
-opencv-python = "^4.9.0.80"
-numpy = "^1.26.3"
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^7.4.4"
-pytest-asyncio = "^0.23.3"
-pytest-cov = "^4.1.0"
-pytest-mock = "^3.12.0"
-black = "^24.1.1"
-ruff = "^0.1.14"
-mypy = "^1.8.0"
-pre-commit = "^3.6.0"
-
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tachikoma"
+version = "2.0.0"
+description = "Tachikoma - Professional Hexapod Robot Control System"
+authors = [{name = "Feiyu", email = "feiyu@tachikoma.local"}]
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "CC-BY-NC-SA-3.0"}
+
+dependencies = [
+    # GUI Application
+    "PyQt6>=6.6.0",
+    "pyqtgraph>=0.13.0",
+    
+    # API minimaliste (Orion monitoring)
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    
+    # Core
+    "pydantic>=2.5.3",
+    "pydantic-settings>=2.1.0",
+    "structlog>=24.1.0",
+    "python-dotenv>=1.0.0",
+    
+    # Hardware (Raspberry Pi)
+    "adafruit-circuitpython-pca9685>=3.4.11",
+    "adafruit-blinka>=8.28.0",
+    "RPi.GPIO>=0.7.1",
+    "smbus2>=0.4.3",
+    "spidev>=3.6",
+    "gpiozero>=2.0.1",
+    
+    # Vision & Autonomous
+    "opencv-python>=4.9.0",
+    "numpy>=1.26.0",
+    
+    # Async
+    "aiofiles>=23.2.1",
+    "httpx>=0.26.0",
+    "prometheus-client>=0.19.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.4",
+    "pytest-asyncio>=0.23.3",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.12.0",
+    "black>=24.1.1",
+    "ruff>=0.1.14",
+    "mypy>=1.8.0",
+]
+
+[project.scripts]
+tachikoma = "tachikoma.gui.main_window:main"
+tachikoma-api = "tachikoma.api.minimal:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tachikoma*"]
 
 [tool.black]
 line-length = 100
-target-version = ['py311']
+target-version = ["py311"]
 
 [tool.ruff]
 line-length = 100
 select = ["E", "F", "I", "N", "W", "UP"]
 
-[tool.mypy]
-python_version = "3.11"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = "test_*.py"
-python_functions = "test_*"
-addopts = "-v --cov=. --cov-report=html --cov-report=term-missing"
 asyncio_mode = "auto"
