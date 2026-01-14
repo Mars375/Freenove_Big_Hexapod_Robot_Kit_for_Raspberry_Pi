@@ -16,7 +16,7 @@ import structlog
 from core.exceptions import HardwareNotAvailableError, CommandExecutionError
 from core.hardware.interfaces import IServoController
 from core.hardware.kinematics import HexapodKinematics
-from core.hardware.gaits import GaitExecutor, GaitType, GaitConfig
+from core.hardware.gaits import GaitExecutor, GaitType
 
 logger = structlog.get_logger()
 
@@ -73,8 +73,8 @@ class MovementController:
     """
     
     # Default body height below neutral (mm)
-    # More negative = lower body, less negative = higher body
-    DEFAULT_BODY_HEIGHT = -10.0
+    # More negative = lower body (legs extended), less negative = higher body (legs contracted)
+    DEFAULT_BODY_HEIGHT = -100.0
     
     # Initial neutral leg position
     NEUTRAL_POSITION = [140.0, 0.0, 0.0]
@@ -403,16 +403,15 @@ class MovementController:
         # Create new gait executor
         self._gait = GaitExecutor(
             body_points=self.body_points,
-            update_callback=self._update_servos,
-            config=GaitConfig(step_height=40.0)
+            update_callback=self._update_servos
         )
         
         # Convert gait type
         gt = GaitType.TRIPOD if gait_type == "1" else GaitType.WAVE
         
-        # Execute gait
+        # Execute gait continuously for duration
         self._gait_task = asyncio.create_task(
-            self._gait.execute(gt, x, y, speed, angle, duration)
+            self._gait.run_continuous(gt, x, y, speed, angle, duration)
         )
         
         # Wait for completion
