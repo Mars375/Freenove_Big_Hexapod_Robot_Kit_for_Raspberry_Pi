@@ -46,13 +46,13 @@ SERVO_MAPPING = [
 @dataclass
 class Leg:
     """Single leg configuration and state."""
-    
+
     id: int
     servo_pins: List[int]
     mount_angle: float  # Degrees from body X-axis
     offset: float       # Distance offset for transform
     is_left: bool       # True for left side legs (3, 4, 5)
-    
+
     # Current state
     position: List[float] = field(default_factory=lambda: [140.0, 0.0, 0.0])
     angles: List[int] = field(default_factory=lambda: [90, 0, 0])
@@ -60,30 +60,30 @@ class Leg:
 
 class MovementController:
     """Modern hexapod movement controller with full gait support.
-    
+
     Uses dependency injection for servo controller, enabling:
     - Hardware abstraction
     - Easy testing with mocks
     - Multiple servo implementations
     - Clean separation of concerns
-    
+
     The controller maintains:
     - Body points: foot positions relative to body center
     - Leg positions: foot positions in leg-local frame
     - Calibration angles: per-leg servo offsets from point.txt
     - Current angles: actual servo angles being commanded
     """
-    
+
     # Default body height below neutral (mm)
     # More negative = lower body (legs extended), less negative = higher body (legs contracted)
     DEFAULT_BODY_HEIGHT = -100.0
-    
+
     # Initial neutral leg position
     NEUTRAL_POSITION = [140.0, 0.0, 0.0]
-    
+
     def __init__(self, servo_controller: Optional[IServoController] = None, imu_sensor: Any = None):
         """Initialize movement controller.
-        
+
         Args:
             servo_controller: Servo controller implementation (injected)
             imu_sensor: IMU sensor for balancing
@@ -93,16 +93,18 @@ class MovementController:
         self._initialized = False
         self._moving = False
         self._gait_task = None
-        
+        self._movement_params = None  # Stocke (gait_type, x, y, speed, angle)
+        self._movement_loop_task = None
+
         # Balance control
         self._balancing = False
         self._balance_task = None
         self._pid_roll = PIDController(kp=0.5, ki=0.01, kd=0.1)
         self._pid_pitch = PIDController(kp=0.5, ki=0.01, kd=0.1)
-        
+
         # Body parameters
         self.body_height = self.DEFAULT_BODY_HEIGHT
-        
+
         # Body points: where feet are relative to body center
         # These define the "standing" position
         self.body_points = [
@@ -113,17 +115,17 @@ class MovementController:
             [-225.0, 0.0, self.body_height],
             [-137.1, 189.4, self.body_height],
         ]
-        
+
         # Leg positions: feet in leg-local frame
         self.leg_positions = [
             [140.0, 0.0, 0.0] for _ in range(6)
         ]
-        
+
         # Calibration data
         self.calibration_leg_positions = self._read_calibration()
         self.calibration_angles = [[0, 0, 0] for _ in range(6)]
         self.current_angles = [[90, 0, 0] for _ in range(6)]
-        
+
         # Initialize legs
         self.legs = [
             Leg(
@@ -135,13 +137,13 @@ class MovementController:
             )
             for i in range(6)
         ]
-        
+
         # Kinematics engine
         self.kinematics = HexapodKinematics()
-        
+
         # Gait executor (created on first use)
         self._gait: Optional[GaitExecutor] = None
-        
+
         # Power control (GPIO 4 is active high disable)
         try:
             self._power_pin = OutputDevice(4)
@@ -150,23 +152,23 @@ class MovementController:
         except Exception:
             self._power_pin = None
             logger.warning("movement.power_pin_failed")
-        
+
         # Apply initial calibration
         self._calibrate()
-        
+
         logger.info(
             "movement_controller.created",
             has_servo=servo_controller is not None
         )
-    
+
     def _read_calibration(self) -> List[List[int]]:
         """Read calibration data from point.txt.
-        
+
         Returns:
             List of [x, y, z] calibration offsets for each leg
         """
         default = [[140, 0, 0] for _ in range(6)]
-        
+
         try:
             # Try current directory first, then legacy location
             for path in ["point.txt", "legacy/Code/Server/point.txt"]:
@@ -183,23 +185,23 @@ class MovementController:
                         if len(data) >= 6:
                             logger.info("movement.calibration_loaded", path=path)
                             return data[:6]
-            
+
             logger.warning("movement.no_calibration_file")
             return default
-            
+
         except Exception as e:
             logger.warning("movement.calibration_read_failed", error=str(e))
             return default
-    
+
     def _calibrate(self) -> None:
         """Calculate calibration angles from calibration positions.
-        
+
         This converts the calibration foot positions to joint angles
         and computes the offset from neutral required for each joint.
         """
         # Reset to neutral leg positions
         self.leg_positions = [[140.0, 0.0, 0.0] for _ in range(6)]
-        
+
         # Calculate angles for calibration positions
         for i in range(6):
             cal_pos = self.calibration_leg_positions[i]
@@ -207,7 +209,7 @@ class MovementController:
             result = self.kinematics.inverse(-cal_pos[2], cal_pos[0], cal_pos[1])
             if result:
                 self.calibration_angles[i] = list(result)
-        
+
         # Calculate neutral angles
         neutral_angles = [[0, 0, 0] for _ in range(6)]
         for i in range(6):
@@ -215,21 +217,21 @@ class MovementController:
             result = self.kinematics.inverse(-pos[2], pos[0], pos[1])
             if result:
                 neutral_angles[i] = list(result)
-        
+
         # Compute offsets
         for i in range(6):
             self.calibration_angles[i][0] -= neutral_angles[i][0]
             self.calibration_angles[i][1] -= neutral_angles[i][1]
             self.calibration_angles[i][2] -= neutral_angles[i][2]
-        
+
         logger.debug("movement.calibrated", offsets=self.calibration_angles)
-    
+
     def _transform_coordinates(self, points: List[List[float]]) -> None:
         """Transform body-frame points to leg-local coordinates.
-        
+
         This applies the rotation for each leg's mounting angle and
         subtracts the leg offset to get positions in the leg's local frame.
-        
+
         Args:
             points: List of 6 body-frame positions [[x, y, z], ...]
         """
@@ -237,17 +239,17 @@ class MovementController:
             angle_rad = math.radians(leg.mount_angle)
             cos_a = math.cos(angle_rad)
             sin_a = math.sin(angle_rad)
-            
+
             # Rotate point to leg-local frame
             x_local = points[i][0] * cos_a + points[i][1] * sin_a - leg.offset
             y_local = -points[i][0] * sin_a + points[i][1] * cos_a
             z_local = points[i][2] - 14  # Z offset for leg mounting height
-            
+
             self.leg_positions[i] = [x_local, y_local, z_local]
-    
+
     async def _set_leg_angles(self) -> None:
         """Calculate and send servo angles for current leg positions.
-        
+
         This is the core function that:
         1. Computes IK for each leg position
         2. Applies calibration offsets
@@ -256,12 +258,12 @@ class MovementController:
         """
         if not self._servo:
             return
-        
+
         # Check validity first
         if not self.kinematics.check_validity(self.leg_positions):
             logger.warning("movement.invalid_positions")
             return
-        
+
         # Calculate angles for each leg
         for i in range(6):
             pos = self.leg_positions[i]
@@ -269,7 +271,7 @@ class MovementController:
             result = self.kinematics.inverse(-pos[2], pos[0], pos[1])
             if result:
                 self.current_angles[i] = list(result)
-        
+
         # Apply calibration and mirroring, then send to servos
         for i in range(3):
             # Right side legs (0, 1, 2)
@@ -287,7 +289,7 @@ class MovementController:
                     0, 180
                 ),
             ]
-            
+
             # Left side legs (3, 4, 5)
             left_idx = i + 3
             left_angles = [
@@ -304,55 +306,55 @@ class MovementController:
                     0, 180
                 ),
             ]
-            
+
             # Send to servos
             leg = self.legs[i]
             await self._servo.set_angle_async(leg.servo_pins[0], right_angles[0])
             await self._servo.set_angle_async(leg.servo_pins[1], right_angles[1])
             await self._servo.set_angle_async(leg.servo_pins[2], right_angles[2])
-            
+
             left_leg = self.legs[left_idx]
             await self._servo.set_angle_async(left_leg.servo_pins[0], left_angles[0])
             await self._servo.set_angle_async(left_leg.servo_pins[1], left_angles[1])
             await self._servo.set_angle_async(left_leg.servo_pins[2], left_angles[2])
-    
+
     @staticmethod
     def _clamp(value: float, min_val: float, max_val: float) -> int:
         """Clamp value to range and return as integer."""
         return int(max(min_val, min(max_val, value)))
-    
+
     def set_servo_controller(self, servo_controller: IServoController) -> None:
         """Set servo controller after initialization (for lazy injection)."""
         self._servo = servo_controller
         logger.info("movement_controller.servo_set")
-    
+
     async def initialize(self) -> None:
         """Initialize servo controller and stand up."""
         if not self._servo:
             raise HardwareNotAvailableError(
                 "No servo controller set. Use set_servo_controller() first."
             )
-        
+
         try:
             logger.info("movement_controller.initializing")
-            
+
             # Ensure power is ON
             if self._power_pin:
                 self._power_pin.off()
-            
+
             # Initialize servo hardware
             await self._servo.initialize()
-            
+
             # Stand in neutral position
             await self.stand()
-            
+
             self._initialized = True
             logger.info("movement_controller.initialized")
             return True
         except Exception as e:
             logger.error("movement_controller.init_failed", error=str(e))
             raise
-    
+
     @property
     def is_available(self) -> bool:
         """Check if controller is ready to use."""
@@ -361,20 +363,20 @@ class MovementController:
             self._servo is not None and
             self._servo.is_available()
         )
-    
+
     async def _update_servos(self, points: List[List[float]]) -> None:
         """Callback for gait executor to update servo positions.
-        
+
         Args:
             points: New body-frame foot positions
         """
         self._transform_coordinates(points)
         await self._set_leg_angles()
-    
+
     async def stand(self) -> None:
         """Stand in neutral position."""
         logger.info("movement.stand")
-        
+
         # Reset to default body points
         self.body_points = [
             [137.1, 189.4, self.body_height],
@@ -384,70 +386,43 @@ class MovementController:
             [-225.0, 0.0, self.body_height],
             [-137.1, 189.4, self.body_height],
         ]
-        
+
         self._transform_coordinates(self.body_points)
         await self._set_leg_angles()
         await asyncio.sleep(0.5)
-    
-    async def run_gait(
-        self,
-        gait_type: str = "1",
-        x: float = 0,
-        y: float = 25,
-        speed: int = 5,
-        angle: float = 0,
-        duration: float = 2.0
-    ) -> None:
-        """Execute a gait pattern.
-        
-        Args:
-            gait_type: "1" for tripod, "2" for wave
-            x: Forward/backward movement (-35 to 35)
-            y: Left/right movement (-35 to 35)
-            speed: Speed 2-10
-            angle: Rotation angle in degrees
-            duration: How long to walk (seconds)
-        """
-        if not self.is_available:
-            raise HardwareNotAvailableError("Movement controller not initialized")
-        
-        logger.info(
-            "movement.run_gait",
-            gait=gait_type, x=x, y=y, speed=speed, angle=angle
-        )
-        
-        gt = GaitType.TRIPOD if gait_type == "1" else GaitType.WAVE
-        
-        # If same gait type is already running, just update parameters
-        if (self._gait and self._gait_task and not self._gait_task.done() and 
-            getattr(self, '_current_gait_type', None) == gt):
-            self._gait.update_params(x, y, speed, angle, duration)
-            return
 
-        # Stop different or stale gait
-        if self._gait:
-            self._gait.stop()
-            if self._gait_task and not self._gait_task.done():
-                try:
-                    await asyncio.wait_for(self._gait_task, timeout=0.1)
-                except asyncio.TimeoutError:
-                    pass
-        
-        # Create new gait executor
-        self._current_gait_type = gt
-        self._gait = GaitExecutor(
-            body_points=self.body_points,
-            update_callback=self._update_servos
-        )
-        
-        # Execute gait continuously for duration
-        self._gait_task = asyncio.create_task(
-            self._gait.run_continuous(gt, x, y, speed, angle, duration)
-        )
-        
-        # Wait for completion (optional, since it's a task, but run_gait is expected to wait)
-        await self._gait_task
-    
+    async def _movement_loop(self) -> None:
+        """Background loop for continuous movement until stop() is called."""
+        logger.info("movement.continuous_loop_started")
+
+        try:
+            while self._moving:
+                if not self._movement_params:
+                    await asyncio.sleep(0.1)
+                    continue
+
+                gait_type, x, y, speed, angle = self._movement_params
+
+                # Reset points for each cycle to prevent drift
+                if self._gait:
+                    self._gait.reset_points()
+
+                # Execute ONE gait cycle
+                gt = GaitType.TRIPOD if gait_type == "1" else GaitType.WAVE
+                if gt == GaitType.TRIPOD:
+                    await self._gait.execute_tripod_cycle(x, y, speed, angle)
+                else:
+                    await self._gait.execute_wave_cycle(x, y, speed, angle)
+
+                # Small pause between cycles
+                await asyncio.sleep(0.05)
+
+        except asyncio.CancelledError:
+            logger.info("movement.continuous_loop_cancelled")
+        except Exception as e:
+            logger.error("movement.continuous_loop_error", error=str(e))
+            self._moving = False
+
     async def move(
         self,
         mode: str = "custom",
@@ -457,85 +432,86 @@ class MovementController:
         angle: int = 0,
         gait_type: str = "1"
     ) -> bool:
-        """Execute movement command.
-        
-        Args:
-            mode: Predefined mode or "custom"
-            x: X axis movement (-35 to 35)
-            y: Y axis movement (-35 to 35)
-            speed: Movement speed (2 to 10)
-            angle: Rotation angle (-10 to 10)
-            gait_type: "1" = Tripod, "2" = Wave
-        """
+        """Execute movement command (continuous until stop)."""
         if not self.is_available:
             raise HardwareNotAvailableError("Movement controller not initialized")
-        
-        try:
-            logger.info("movement.move", mode=mode, x=x, y=y, speed=speed, angle=angle)
-            
-            # Map mode to parameters
-            # Map mode to parameters
-            params = {
-                "forward": (0, 25, 0),    # Y is forward
-                "backward": (0, -25, 0),  # Y is backward
-                "left": (-25, 0, 0),      # X is lateral (negative left?) - verify direction
-                "right": (25, 0, 0),      # X is lateral
-                "turn_left": (0, 0, 15),
-                "turn_right": (0, 0, -15),
-                "custom": (x, y, angle),
-                "motion": (x, y, 0),
-                "gait": (x, 0, angle),
-            }
-            
-            x_val, y_val, angle_val = params.get(mode, (x, y, angle))
-            
-            # If everything is zero, stop
-            if x_val == 0 and y_val == 0 and angle_val == 0:
-                return await self.stop()
 
-            await self.run_gait(
-                gait_type=gait_type,
-                x=x_val,
-                y=y_val,
-                speed=speed,
-                angle=angle_val,
-                duration=2.0
-            )
-            
+        logger.info("movement.move", mode=mode, x=x, y=y, speed=speed, angle=angle)
+
+        # Map mode to parameters
+        params = {
+            "forward": (0, 25, 0),
+            "backward": (0, -25, 0),
+            "left": (-25, 0, 0),
+            "right": (25, 0, 0),
+            "turn_left": (0, 0, 15),
+            "turn_right": (0, 0, -15),
+            "custom": (x, y, angle),
+            "motion": (x, y, 0),
+            "gait": (x, 0, angle),
+        }
+
+        x_val, y_val, angle_val = params.get(mode, (x, y, angle))
+
+        # If everything is zero, stop
+        if x_val == 0 and y_val == 0 and angle_val == 0:
+            return await self.stop()
+
+        # Update movement parameters
+        self._movement_params = (gait_type, x_val, y_val, speed, angle_val)
+
+        # If already moving, just update params (hot reload)
+        if self._moving and self._movement_loop_task and not self._movement_loop_task.done():
+            logger.info("movement.params_updated")
             return True
-            
-        except Exception as e:
-            logger.error("movement.move_failed", error=str(e))
-            raise CommandExecutionError(f"Move failed: {e}")
-    
+
+        # Start continuous movement
+        self._moving = True
+
+        # Create GaitExecutor if needed
+        if not self._gait:
+            self._gait = GaitExecutor(
+                body_points=self.body_points,
+                update_callback=self._update_servos
+            )
+
+        # Start background loop
+        self._movement_loop_task = asyncio.create_task(self._movement_loop())
+
+        return True
+
     async def stop(self) -> bool:
         """Stop all movement."""
         if not self.is_available:
             raise HardwareNotAvailableError("Movement controller not initialized")
-        
+
+        logger.info("movement.stop")
+
         try:
-            logger.info("movement.stop")
-            
-            # Stop gait
-            if self._gait:
-                self._gait.stop()
-            
-            # Wait for gait task to finish
-            if self._gait_task and not self._gait_task.done():
-                await self._gait_task
-            
+            # Signal stop
+            self._moving = False
+            self._movement_params = None
+
+            # Cancel background loop
+            if self._movement_loop_task and not self._movement_loop_task.done():
+                self._movement_loop_task.cancel()
+                try:
+                    await self._movement_loop_task
+                except asyncio.CancelledError:
+                    pass
+
             # Return to standing
             await self.stand()
-            
+
             return True
-            
+
         except Exception as e:
             logger.error("movement.stop_failed", error=str(e))
             raise CommandExecutionError(f"Stop failed: {e}")
-    
+
     async def set_position(self, x: float, y: float, z: float) -> bool:
         """Move body to specified position offset.
-        
+
         Args:
             x: X offset (-40 to 40)
             y: Y offset (-40 to 40)
@@ -543,30 +519,30 @@ class MovementController:
         """
         if not self.is_available:
             raise HardwareNotAvailableError("Movement controller not initialized")
-        
+
         logger.info("movement.set_position", x=x, y=y, z=z)
-        
+
         # Clamp values
         x = max(-40, min(40, x))
         y = max(-40, min(40, y))
         z = max(-20, min(20, z))
-        
+
         # Update body points
         for i in range(6):
             self.body_points[i][0] -= x
             self.body_points[i][1] -= y
             self.body_points[i][2] = -30 - z
-        
+
         self.body_height = self.body_points[0][2]
-        
+
         self._transform_coordinates(self.body_points)
         await self._set_leg_angles()
-        
+
         return True
-    
+
     async def set_attitude(self, roll: float, pitch: float, yaw: float) -> bool:
         """Set body attitude (rotation).
-        
+
         Args:
             roll: Roll angle (-15 to 15)
             pitch: Pitch angle (-15 to 15)
@@ -574,19 +550,19 @@ class MovementController:
         """
         if not self.is_available:
             raise HardwareNotAvailableError("Movement controller not initialized")
-        
+
         logger.info("movement.set_attitude", roll=roll, pitch=pitch, yaw=yaw)
-        
+
         # Clamp values
         roll = max(-15, min(15, roll))
         pitch = max(-15, min(15, pitch))
         yaw = max(-15, min(15, yaw))
-        
+
         # Convert to radians
         roll_rad = math.radians(roll)
         pitch_rad = math.radians(pitch)
         yaw_rad = math.radians(yaw)
-        
+
         # Rotation matrices
         rx = [
             [1, 0, 0],
@@ -603,7 +579,7 @@ class MovementController:
             [math.sin(yaw_rad), math.cos(yaw_rad), 0],
             [0, 0, 1]
         ]
-        
+
         # Footpoint structure
         footpoints = [
             [137.1, 189.4, 0],
@@ -613,23 +589,23 @@ class MovementController:
             [-225.0, 0.0, 0],
             [-137.1, 189.4, 0],
         ]
-        
+
         # Apply rotation to each footpoint
         position = [0, 0, self.body_height]
         new_points = []
-        
+
         for fp in footpoints:
             # Combined rotation: R = Rx * Ry * Rz * fp + position
             # Simplified for small angles
             x = position[0] + fp[0] * math.cos(yaw_rad) - fp[1] * math.sin(yaw_rad)
             y = position[1] + fp[0] * math.sin(yaw_rad) + fp[1] * math.cos(yaw_rad)
             z = position[2] + fp[0] * math.sin(pitch_rad) + fp[1] * math.sin(roll_rad)
-            
+
             new_points.append([x, y, z])
-        
+
         self._transform_coordinates(new_points)
         await self._set_leg_angles()
-        
+
         await asyncio.sleep(0.3)
         return True
 
@@ -643,7 +619,7 @@ class MovementController:
         """Toggle IMU-based balance mode."""
         if enabled == self._balancing:
             return
-            
+
         self._balancing = enabled
         if enabled:
             if self._balance_task:
@@ -664,10 +640,10 @@ class MovementController:
             from core.hardware.factory import get_hardware_factory
             factory = get_hardware_factory()
             self._imu = await factory.get_imu()
-            
+
         self._pid_roll.reset()
         self._pid_pitch.reset()
-        
+
         try:
             while self._balancing:
                 accel = await self._imu.read_accel()
@@ -676,14 +652,14 @@ class MovementController:
                     # Match legacy orientation/mapping if needed
                     roll = math.atan2(accel[1], accel[2]) * 180 / math.pi
                     pitch = math.atan2(-accel[0], math.sqrt(accel[1]**2 + accel[2]**2)) * 180 / math.pi
-                    
+
                     # Apply PID
                     adj_roll = self._pid_roll.update(roll)
                     adj_pitch = self._pid_pitch.update(pitch)
-                    
+
                     # Set attitude (internal call without log spam)
                     await self._set_attitude_internal(adj_roll, adj_pitch, 0)
-                    
+
                 await asyncio.sleep(0.02) # 50Hz
         except asyncio.CancelledError:
             pass
@@ -696,14 +672,14 @@ class MovementController:
         roll = max(-15, min(15, roll))
         pitch = max(-15, min(15, pitch))
         yaw = max(-15, min(15, yaw))
-        
+
         roll_rad, pitch_rad, yaw_rad = math.radians(roll), math.radians(pitch), math.radians(yaw)
-        
+
         footpoints = [
             [137.1, 189.4, 0], [225.0, 0.0, 0], [137.1, -189.4, 0],
             [-137.1, -189.4, 0], [-225.0, 0.0, 0], [-137.1, 189.4, 0],
         ]
-        
+
         position = [0, 0, self.body_height]
         new_points = []
         for fp in footpoints:
@@ -711,7 +687,7 @@ class MovementController:
             y = position[1] + fp[0] * math.sin(yaw_rad) + fp[1] * math.cos(yaw_rad)
             z = position[2] + fp[0] * math.sin(pitch_rad) + fp[1] * math.sin(roll_rad)
             new_points.append([x, y, z])
-        
+
         self._transform_coordinates(new_points)
         await self._set_leg_angles()
 
@@ -721,17 +697,17 @@ class MovementController:
         # Reconstruct legacy calibration if point.txt logic is needed
         # For now, just a placeholder that matches the protocol
         return True
-    
+
     async def cleanup(self) -> None:
         """Cleanup resources."""
         logger.info("movement_controller.cleanup")
-        
+
         if self._gait:
             self._gait.stop()
-        
+
         if self._gait_task and not self._gait_task.done():
             await self._gait_task
-        
+
         if self._servo:
             try:
                 await self.stand()

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+import asyncio
 from api.models import MoveCommand, AttitudeCommand, StandardResponse
 from core.robot_controller import get_robot_controller, initialize_robot
 from core.exceptions import HardwareNotAvailableError, CommandExecutionError
@@ -83,3 +84,48 @@ async def stop_robot():
         raise HTTPException(status_code=503, detail=str(e))
     except CommandExecutionError as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/test_walk", response_model=StandardResponse)
+async def test_walk():
+    """
+    🧪 DEV ONLY: Test endpoint for validating continuous movement.
+    Walks forward for 5 seconds then stops.
+    """
+    logger.info("movement.test_walk.start")
+
+    try:
+        robot = await initialize_robot()
+
+        # Start walking forward (tripod gait)
+        await robot.movement.move(
+            mode="forward",
+            speed=5,
+            gait_type="1"  # tripod
+        )
+
+        # Let it walk for 5 seconds
+        await asyncio.sleep(5.0)
+
+        # Stop
+        await robot.movement.stop()
+
+        logger.info("movement.test_walk.complete")
+
+        return StandardResponse(
+            success=True,
+            message="Test walk completed (5s forward, tripod gait)",
+            data={
+                "duration": 5.0,
+                "gait": "tripod",
+                "mode": "forward"
+            }
+        )
+
+    except HardwareNotAvailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except CommandExecutionError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error("movement.test_walk.failed", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Test walk failed: {e}")
