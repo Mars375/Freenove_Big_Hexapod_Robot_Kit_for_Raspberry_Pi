@@ -89,7 +89,7 @@ async def main():
             y=20,
             speed=5,
             angle=0,
-            duration=3.0
+            duration=5.0
         )
         print("Wave gait - OK")
         
