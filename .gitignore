@@ -8,6 +8,7 @@ build/
 develop-eggs/
 dist/
 !core/web/frontend/dist/
+!core/web/frontend/dist/assets/
 downloads/
 eggs/
 .eggs/

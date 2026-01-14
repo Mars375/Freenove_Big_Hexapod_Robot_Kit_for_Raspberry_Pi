@@ -63,7 +63,11 @@ def create_app() -> FastAPI:
     frontend_dist = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core", "web", "frontend", "dist")
     
     if os.path.exists(frontend_dist):
-        app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+        assets_dir = os.path.join(frontend_dist, "assets")
+        if os.path.exists(assets_dir):
+            app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+        else:
+            logger.warning("frontend.assets_not_found", path=assets_dir)
         
         @app.get("/{rest_of_path:path}")
         async def serve_frontend(rest_of_path: str):
