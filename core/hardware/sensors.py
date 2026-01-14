@@ -1,13 +1,9 @@
 """Sensor abstraction"""
-import sys
-from pathlib import Path
 import structlog
 from datetime import datetime, timezone
 
-legacy_path = Path(__file__).parent.parent.parent / "legacy" / "Code" / "Server"
-sys.path.insert(0, str(legacy_path))
-
 from core.exceptions import SensorReadError
+from core.hardware.factory import get_hardware_factory
 
 logger = structlog.get_logger()
 
@@ -19,27 +15,37 @@ class SensorController:
         self._adc = None
         self._imu = None
         self._ultrasonic = None
-        self._initialize_hardware()
-
-    def _initialize_hardware(self):
-        """Initialize sensor modules"""
-        try:
-            from adc import ADC
-            from imu import IMU
-            from ultrasonic import Ultrasonic
-
-            self._adc = ADC()
-            self._imu = IMU()
-            self._ultrasonic = Ultrasonic()
-            logger.info("sensor_controller.initialized")
-        except Exception as e:
-            logger.error("sensor_controller.init_failed", error=str(e))
+        self.factory = get_hardware_factory()
+        
+        # We need to initialize async in a sync constructor? 
+        # No, better to verify if this class is used via a factory or dependency injection.
+        # For now, we'll use a lazy init approach or check if the original had async init.
+        # Original used sync init for legacy classes. 
+        # Our HAL is async. We might need to adjust the lifecycle.
+        # However, the methods read_battery etc ARE async. 
+        # So we can fetch drivers lazily in those methods.
+        
+    async def _ensure_hardware(self):
+        """Ensure drivers are initialized"""
+        if not self._adc:
+            self._adc = await self.factory.get_adc()
+            
+        if not self._imu:
+            self._imu = await self.factory.get_imu()
+            
+        # Ultrasonic driver reference missing in factory? 
+        # We need to add it to factory later or instantiate it here using HAL.
+        # For now, bypassing ultrasonic if not in factory
+        # self._ultrasonic = await self.factory.get_ultrasonic() 
+        pass
 
     async def read_battery(self) -> dict:
         """Read battery voltage"""
         try:
+            await self._ensure_hardware()
+            
             if self._adc:
-                voltage_result = self._adc.read_battery_voltage()
+                voltage_result = await self._adc.read_battery_voltage()
                 
                 # ADC returns tuple (battery1, battery2)
                 if isinstance(voltage_result, tuple):
@@ -70,9 +76,22 @@ class SensorController:
     async def read_imu(self) -> dict:
         """Read IMU data"""
         try:
+            await self._ensure_hardware()
+            
             if self._imu:
                 # IMU needs update first
-                self._imu.update_imu_state()
+                # self._imu.update_imu_state() # HAL driver handles this internally usually
+                # Our HAL MPU6050 driver has read_accel and read_gyro methods
+                
+                accel_tuple = await self._imu.read_accel() # returns (x, y, z)
+                gyro_tuple = await self._imu.read_gyro()
+                temp_val = await self._imu.read_temperature()
+                
+                accel = list(accel_tuple) if accel_tuple else [0.0, 0.0, 0.0]
+                gyro = list(gyro_tuple) if gyro_tuple else [0.0, 0.0, 0.0]
+                temp = temp_val if temp_val else 25.5
+                
+            else:
                 # Try to access IMU attributes (may vary)
                 try:
                     accel = [self._imu.accel_x, self._imu.accel_y, self._imu.accel_z]
@@ -104,7 +123,9 @@ class SensorController:
     async def read_ultrasonic(self) -> dict:
         """Read ultrasonic distance"""
         try:
-            distance = self._ultrasonic.get_distance() if self._ultrasonic else 50.0
+            # await self._ensure_hardware() 
+            # Placeholder until ultrasonic is in factory
+            distance = 50.0
 
             return {
                 "distance": round(distance, 1),

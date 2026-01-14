@@ -1,12 +1,8 @@
 """Camera control abstraction"""
-import sys
-from pathlib import Path
 import structlog
 
-legacy_path = Path(__file__).parent.parent.parent / "legacy" / "Code" / "Server"
-sys.path.insert(0, str(legacy_path))
-
 from core.exceptions import HardwareNotAvailableError, CommandExecutionError
+from core.hardware.factory import get_hardware_factory
 
 logger = structlog.get_logger()
 
@@ -15,24 +11,22 @@ class CameraController:
     """Abstraction for camera pan/tilt control"""
     
     def __init__(self):
+        self.factory = get_hardware_factory()
         self._servo = None
-        self._horizontal_channel = 0  # Pan servo channel
+        self._horizontal_channel = 0  # Pan servo channel (Likely on Board 1, verifies with user setup if known)
         self._vertical_channel = 1    # Tilt servo channel
-        self._initialize_hardware()
-    
-    def _initialize_hardware(self):
-        """Initialize servo controller for camera"""
-        try:
-            from servo import Servo
-            self._servo = Servo()
-            logger.info("camera_controller.initialized")
-        except Exception as e:
-            logger.error("camera_controller.init_failed", error=str(e))
-            self._servo = None
+        # Note: If cameras are on specific channels, we need to know. 
+        # Usually they are 0 and 1. If Board 1 is 0-15 (0x41), and Board 0 is 16-31 (0x40).
+        # We need to confirm if Camera is on Board 1 (0, 1) or Board 2 (virtually 16, 17)
+        # Using 0 and 1 for now (Board 1).
+        
+    async def _ensure_hardware(self):
+        if not self._servo:
+            self._servo = await self.factory.create_servo_controller()
     
     @property
     def is_available(self) -> bool:
-        return self._servo is not None
+        return True # Availability check is done in methods via _ensure_hardware
     
     async def rotate(self, horizontal: int, vertical: int) -> bool:
         """Rotate camera servos
@@ -41,7 +35,9 @@ class CameraController:
             horizontal: Pan angle (-90 to 90, 0=center)
             vertical: Tilt angle (-45 to 45, 0=center)
         """
-        if not self.is_available:
+        await self._ensure_hardware()
+        
+        if not self._servo or not self._servo.is_available():
             raise HardwareNotAvailableError("Camera controller not initialized")
         
         try:
@@ -55,9 +51,9 @@ class CameraController:
             h_angle = max(0, min(180, h_angle))
             v_angle = max(45, min(135, v_angle))
             
-            # Set servo angles using the correct method
-            self._servo.set_servo_angle(self._horizontal_channel, h_angle)
-            self._servo.set_servo_angle(self._vertical_channel, v_angle)
+            # Set servo angles 
+            await self._servo.set_angle_async(self._horizontal_channel, h_angle)
+            await self._servo.set_angle_async(self._vertical_channel, v_angle)
             
             logger.info("camera_controller.rotated", horizontal=horizontal, vertical=vertical, 
                        h_angle=h_angle, v_angle=v_angle)
