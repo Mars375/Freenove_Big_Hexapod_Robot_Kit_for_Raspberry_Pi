@@ -48,11 +48,7 @@ class LEDController:
 
             logger.info("led_controller.mode_set", mode=mode, r=r, g=g, b=b)
             return True
-            else:
-                raise ValueError(f"Unknown LED mode: {mode}")
 
-            logger.info("led_controller.mode_set", mode=mode, r=r, g=g, b=b)
-            return True
         except Exception as e:
             logger.error("led_controller.mode_failed", error=str(e))
             raise CommandExecutionError(f"LED mode failed: {e}")
