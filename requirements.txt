@@ -24,6 +24,10 @@ hiredis==2.3.2
 # Vision
 opencv-python==4.9.0.80
 numpy==1.26.3
+<<<<<<< Updated upstream
+=======
+#picamera2==0.1.1
+>>>>>>> Stashed changes
 
 # Hardware (Raspberry Pi)
 adafruit-circuitpython-servokit==1.3.9
