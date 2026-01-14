@@ -47,6 +47,16 @@ class Buzzer:
         except Exception as e:
             logger.error("buzzer.beep_failed", error=str(e))
             
+    async def on(self):
+        """Active le buzzer."""
+        if self._available and self._buzzer:
+            self._buzzer.on()
+
+    async def off(self):
+        """Désactive le buzzer."""
+        if self._available and self._buzzer:
+            self._buzzer.off()
+            
     async def cleanup(self):
         if self._buzzer:
             self._buzzer.close()

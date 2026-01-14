@@ -46,7 +46,11 @@ async def websocket_endpoint(websocket: WebSocket):
                     # Use current robot state
                     distance = 0
                     if sonar_enabled:
-                        distance = await robot.sensors.get_ultrasonic_distance()
+                        try:
+                            distance = await robot.sensors.get_ultrasonic_distance()
+                        except Exception as se:
+                            logger.warning("websocket.sonar_read_failed", error=str(se))
+                            distance = -1
                     
                     battery = await robot.sensors.get_battery_voltage()
                     
@@ -119,7 +123,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     logger.info("websocket.sonar_toggle", enabled=sonar_enabled)
                 elif cmd == "camera_toggle":
                     camera_enabled = data.get("enabled", True)
-                    # Here we could call robot.camera.stop() or start()
+                    if camera_enabled:
+                        await robot.camera.start_streaming()
+                    else:
+                        await robot.camera.stop_streaming()
                     logger.info("websocket.camera_toggle", enabled=camera_enabled)
                 elif cmd == "face":
                     face_recognition_enabled = data.get("enabled", False)
@@ -130,8 +137,12 @@ async def websocket_endpoint(websocket: WebSocket):
                     await robot.movement.stand()
                     logger.info("websocket.height_updated", height=height)
                 elif cmd == "buzzer":
-                    enabled = data.get("enabled", False)
-                    if enabled:
+                    action = data.get("action")
+                    if action == "on":
+                        await robot.buzzer.on()
+                    elif action == "off":
+                        await robot.buzzer.off()
+                    elif data.get("enabled"): # Fallback for old toggle
                         await robot.buzzer.beep(0.1)
                 elif cmd == "camera":
                     await robot.camera.rotate(

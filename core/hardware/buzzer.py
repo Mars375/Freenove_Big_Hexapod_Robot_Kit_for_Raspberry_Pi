@@ -24,6 +24,27 @@ class BuzzerController:
     def is_available(self) -> bool:
         return self._initialized
 
+    async def on(self) -> bool:
+        """Turn buzzer ON indefinitely."""
+        await self._ensure_hardware()
+        try:
+            await self._buzzer.on()
+            return True
+        except Exception as e:
+            logger.error("buzzer_controller.on_failed", error=str(e))
+            return False
+
+    async def off(self) -> bool:
+        """Turn buzzer OFF."""
+        if self._initialized:
+            try:
+                await self._buzzer.off()
+                return True
+            except Exception as e:
+                logger.error("buzzer_controller.off_failed", error=str(e))
+                return False
+        return True
+
     async def beep(self, duration: float, frequency: int = 1000) -> bool:
         """Activate buzzer
         
@@ -40,5 +61,4 @@ class BuzzerController:
         except Exception as e:
             logger.error("buzzer_controller.beep_failed", error=str(e))
             raise CommandExecutionError(f"Buzzer beep failed: {e}")
-
 

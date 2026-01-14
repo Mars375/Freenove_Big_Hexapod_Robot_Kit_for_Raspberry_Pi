@@ -316,7 +316,11 @@ const App = () => {
              <button className={`status-pill ${faceEnabled ? 'online' : 'offline'}`} onClick={() => { setFaceEnabled(!faceEnabled); sendCommand({cmd: 'face', enabled: !faceEnabled}); }} style={{cursor: 'pointer', fontSize: '0.6rem', width: '100%'}}>RECON. FACIALE: {faceEnabled ? 'ON' : 'OFF'}</button>
              <button 
                 className="status-pill online" 
-                onClick={() => sendCommand({cmd: 'buzzer', enabled: true})} 
+                onMouseDown={() => sendCommand({cmd: 'buzzer', action: 'on'})}
+                onMouseUp={() => sendCommand({cmd: 'buzzer', action: 'off'})}
+                onMouseLeave={() => sendCommand({cmd: 'buzzer', action: 'off'})}
+                onTouchStart={(e) => {e.preventDefault(); sendCommand({cmd: 'buzzer', action: 'on'})}}
+                onTouchEnd={(e) => {e.preventDefault(); sendCommand({cmd: 'buzzer', action: 'off'})}}
                 style={{cursor: 'pointer', fontSize: '0.6rem', width: '100%', marginTop: '5px', background: '#f1c40f', color: '#000'}}
               >
                 BEEP (SIGNAL SONORE)
