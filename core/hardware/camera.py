@@ -14,12 +14,13 @@ class CameraController:
         self.factory = get_hardware_factory()
         self._servo = None
         self._driver = None
-        self._horizontal_channel = 0
-        self._vertical_channel = 1
+        self._horizontal_channel = 1 # Swapped per user report (was 0)
+        self._vertical_channel = 0   # Swapped per user report (was 1)
         # Note: If cameras are on specific channels, we need to know. 
-        # Usually they are 0 and 1. If Board 1 is 0-15 (0x41), and Board 0 is 16-31 (0x40).
-        # We need to confirm if Camera is on Board 1 (0, 1) or Board 2 (virtually 16, 17)
-        # Using 0 and 1 for now (Board 1).
+        # User reported: 
+        # Tilt (Vertical) moved Left/Right -> So Vertical is on Horizontal Channel?
+        # Pan (Horizontal) moved Up/Down -> So Horizontal is on Vertical Channel?
+        # Swapping defaults to 1 (Pan) and 0 (Tilt) to test.
         
     async def _ensure_hardware(self):
         if not self._servo:
@@ -51,8 +52,9 @@ class CameraController:
             v_angle = 90 + vertical
             
             # Clamp values
+            # Clamp values
             h_angle = max(0, min(180, h_angle))
-            v_angle = max(45, min(135, v_angle))
+            v_angle = max(50, min(135, v_angle)) # Min 50 per legacy "x" limit for Ch 0 (Vertical)
             
             # Set servo angles 
             await self._servo.set_angle_async(self._horizontal_channel, h_angle)
@@ -75,3 +77,17 @@ class CameraController:
     async def center(self) -> bool:
         """Center camera to default position"""
         return await self.rotate(0, 0)
+        
+    async def start_streaming(self):
+        """Start camera streaming"""
+        await self._ensure_hardware()
+        if self._driver:
+            if hasattr(self._driver, 'start_streaming'):
+                await self._driver.start_streaming()
+
+    async def stop_streaming(self):
+        """Stop camera streaming"""
+        await self._ensure_hardware()
+        if self._driver:
+            if hasattr(self._driver, 'stop_streaming'):
+                await self._driver.stop_streaming()
