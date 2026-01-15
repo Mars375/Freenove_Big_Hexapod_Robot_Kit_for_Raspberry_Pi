@@ -540,13 +540,13 @@ class MovementController:
                 "turn_left": (0, 0, 15),
                 "turn_right": (0, 0, -15),
                 "custom": (x, y, angle),
-                "motion": (x, y, 0),
+                "motion": (x, y, angle),  # ✅ FIX: Preserve angle parameter
                 "gait": (x, 0, angle),
             }
 
             x_val, y_val, angle_val = params.get(mode, (x, y, angle))
 
-            # If everything is zero, stop
+            # ✅ FIX: Only stop if x, y, AND angle are all zero
             if x_val == 0 and y_val == 0 and angle_val == 0:
                 logger.info("movement.move.zero_params.stopping")
                 return await self.stop()
