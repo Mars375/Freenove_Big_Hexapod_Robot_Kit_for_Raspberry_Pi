@@ -3,7 +3,7 @@
 Ce document est la **source unique de vérité** pour le développement du robot **Tachikoma**.
 Il décrit **toutes les fonctionnalités**, leur **statut**, leur **priorité**, et leur **ordonnancement**.
 
-Toute implémentation, discussion technique ou décision d’architecture DOIT se rattacher à cette roadmap.
+Toute implémentation, discussion technique ou décision d'architecture DOIT se rattacher à cette roadmap.
 
 ---
 
@@ -23,9 +23,9 @@ Toute implémentation, discussion technique ou décision d’architecture DOIT s
 | LOC-02 | Reculer                        | ✅      |
 | LOC-03 | Déplacement latéral droit      | ✅      |
 | LOC-04 | Déplacement latéral gauche     | ✅      |
-| LOC-05 | Rotation droite (pivot)        | ⚠️     |
-| LOC-06 | Rotation gauche (pivot)        | ⚠️     |
-| LOC-07 | Réglage vitesse (2–10)         | ⚠️     |
+| LOC-05 | Rotation droite (pivot)        | ✅      |
+| LOC-06 | Rotation gauche (pivot)        | ✅      |
+| LOC-07 | Réglage vitesse (2–10)         | ✅      |
 | LOC-08 | Altitude corps (Z)             | 🔲     |
 | LOC-09 | Balance Pitch / Roll / Yaw     | 🔲     |
 | LOC-10 | Marche crabe / diagonale       | 🔲     |
@@ -92,7 +92,7 @@ Toute implémentation, discussion technique ou décision d’architecture DOIT s
 | ------ | ---------------------- | ------ |
 | SEN-01 | Batterie (voltage)     | ✅      |
 | SEN-02 | IMU (Pitch/Roll/Yaw)   | ✅      |
-| SEN-03 | Sonar distance         | ⚠️     |
+| SEN-03 | Sonar distance         | ✅      |
 | SEN-04 | Gyroscope              | 🔲     |
 | SEN-05 | Accéléromètre          | 🔲     |
 | SEN-06 | Magnétomètre           | 🔲     |
@@ -175,13 +175,13 @@ Toute implémentation, discussion technique ou décision d’architecture DOIT s
 
 ## 📅 PHASES
 
-### PHASE 1 — FONDATIONS
+### PHASE 1 — FONDATIONS ✅ COMPLETE
 
-* LOC-05 / LOC-06 / LOC-07
-* LED-03
-* SEN-03
-* NET-02
-* UI-02
+* ✅ LOC-05 / LOC-06 / LOC-07 (Rotation + vitesse)
+* ⚠️ LED-03 (Arc-en-ciel - bugs mineurs)
+* ✅ SEN-03 (Sonar avec lgpio)
+* ⚠️ NET-02 (WebSocket - spam logs)
+* 🔲 UI-02 (GUI PyQt6 - prochaine étape)
 
 ### PHASE 2 — CORE
 
@@ -207,4 +207,3 @@ Toute implémentation, discussion technique ou décision d’architecture DOIT s
 ---
 
 📌 **Toute modification de ce document doit être volontaire, tracée et justifiée.**
-
