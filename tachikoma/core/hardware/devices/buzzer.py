@@ -1,6 +1,6 @@
 import logging
-import time
-from typing import Dict, Any
+import asyncio
+from typing import Dict, Any, Optional
 from tachikoma.core.config import settings
 from tachikoma.core.hardware.interfaces.base import IHardwareComponent, HardwareStatus
 
@@ -23,6 +23,7 @@ class Buzzer(IHardwareComponent):
         self.logger = logging.getLogger(__name__)
         self._status = HardwareStatus.UNINITIALIZED
         self._pwm = None
+        self._buzz_task: Optional[asyncio.Task] = None
     
     async def initialize(self) -> bool:
         if not GPIO_AVAILABLE:
@@ -51,7 +52,7 @@ class Buzzer(IHardwareComponent):
     
     async def cleanup(self) -> None:
         try:
-            self.stop()
+            await self.stop_async()
             if self._pwm:
                 self._pwm.stop()
             GPIO.cleanup([self.pin])
@@ -59,21 +60,72 @@ class Buzzer(IHardwareComponent):
         except Exception as e:
             self.logger.error(f"Error during cleanup: {e}")
     
-    def beep(self, frequency: int = 1000, duration: float = 0.1) -> bool:
+    async def beep(self, frequency: int = 1000, duration: float = 0.1) -> bool:
+        """
+        Async beep - non-blocking, allows long duration buzzes.
+        Cancels any previous buzz in progress.
+        """
+        if not self.is_available():
+            self.logger.warning("Buzzer not available")
+            return False
+        
+        # Cancel previous buzz if running
+        if self._buzz_task and not self._buzz_task.done():
+            self._buzz_task.cancel()
+            try:
+                await self._buzz_task
+            except asyncio.CancelledError:
+                pass
+        
+        # Start new buzz task
+        self._buzz_task = asyncio.create_task(self._run_beep(frequency, duration))
+        return True
+    
+    async def _run_beep(self, frequency: int, duration: float):
+        """Internal async beep implementation"""
+        try:
+            self._pwm.ChangeFrequency(frequency)
+            self._pwm.start(50)  # 50% duty cycle
+            self.logger.info(f"Buzzer started: {frequency}Hz for {duration}s")
+            
+            await asyncio.sleep(duration)
+            
+            self._pwm.stop()
+            self.logger.info("Buzzer stopped (completed)")
+            
+        except asyncio.CancelledError:
+            self._pwm.stop()
+            self.logger.info("Buzzer stopped (cancelled)")
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to beep: {e}")
+            self._pwm.stop()
+    
+    async def stop_async(self) -> bool:
+        """Stop any running buzz"""
+        if self._buzz_task and not self._buzz_task.done():
+            self._buzz_task.cancel()
+            try:
+                await self._buzz_task
+            except asyncio.CancelledError:
+                pass
+            return True
+        return False
+    
+    def stop(self) -> bool:
+        """Synchronous stop for compatibility"""
         if not self.is_available():
             return False
         
         try:
-            self._pwm.ChangeFrequency(frequency)
-            self._pwm.start(50)  # 50% duty cycle
-            time.sleep(duration)
             self._pwm.stop()
             return True
         except Exception as e:
-            self.logger.error(f"Failed to beep: {e}")
+            self.logger.error(f"Failed to stop buzzer: {e}")
             return False
     
     def play_tone(self, frequency: int, duty_cycle: int = 50) -> bool:
+        """Start continuous tone (must call stop() manually)"""
         if not self.is_available():
             return False
         
@@ -86,27 +138,18 @@ class Buzzer(IHardwareComponent):
             self.logger.error(f"Failed to play tone: {e}")
             return False
     
-    def stop(self) -> bool:
-        if not self.is_available():
-            return False
-        
-        try:
-            self._pwm.stop()
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to stop buzzer: {e}")
-            return False
-    
-    def play_melody(self, notes: list, tempo: float = 0.5) -> bool:
+    async def play_melody(self, notes: list, tempo: float = 0.5) -> bool:
+        """Play a melody (list of frequencies, 0 = pause)"""
         if not self.is_available():
             return False
         
         try:
             for note in notes:
                 if note > 0:
-                    self.beep(note, tempo)
+                    await self.beep(note, tempo)
+                    await asyncio.sleep(tempo)
                 else:
-                    time.sleep(tempo)
+                    await asyncio.sleep(tempo)
             return True
         except Exception as e:
             self.logger.error(f"Failed to play melody: {e}")
@@ -120,7 +163,8 @@ class Buzzer(IHardwareComponent):
             "type": "buzzer",
             "pin": self.pin,
             "status": self._status.value,
-            "available": self.is_available()
+            "available": self.is_available(),
+            "buzzing": self._buzz_task is not None and not self._buzz_task.done()
         }
     
     def get_health(self) -> Dict[str, Any]:
