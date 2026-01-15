@@ -10,6 +10,22 @@ Version modernisée du Freenove Big Hexapod Robot avec architecture microservice
 
 ---
 
+## 🎉 Dernières mises à jour - Janvier 2026
+
+### ✅ Phase 1 : Stabilisation Complète
+
+**Bugs fixés** (15 janvier 2026):
+- ✅ **LOC-05** : Rotation droite (pivot) - Fix du mode `motion` qui ignorait le paramètre `angle`
+- ✅ **LOC-06** : Rotation gauche (pivot) - Idem, rotation dans les deux sens fonctionnelle
+- ✅ **LOC-07** : Réglage vitesse - Confirmé fonctionnel (vitesse 2-10)
+- ✅ **SEN-03** : Sonar distance - Fix crash lgpio sur Raspberry Pi 5 (installation `python3-lgpio`)
+
+**Résultat** : Locomotion de base **100% stable** ! Le robot peut maintenant pivoter sur lui-même, se déplacer dans toutes les directions, et lire tous les capteurs sans crash.
+
+**Prochaine étape** : Phase 2 - GUI Desktop PyQt6 pour contrôle visuel du robot.
+
+---
+
 ## 🚀 Nouveautés v2.1 (Phase 2)
 
 ### ✨ API REST Complète
@@ -161,22 +177,23 @@ Installation identique à la Phase 1 (voir section complète dans le fichier).
 
 ## 🛣️ Roadmap
 
-### Phase 1 : Fondations ✅ (TERMINÉ)
+### Phase 1 : Fondations ✅ (TERMINÉ - 15 janvier 2026)
 - [x] Restructuration du projet
 - [x] Configuration moderne
 - [x] Logging structuré
 - [x] API FastAPI de base
 - [x] Tests unitaires et intégration
+- [x] **Fix rotation droite/gauche (LOC-05/06)**
+- [x] **Fix sonar lgpio (SEN-03)**
 
-### Phase 2 : API REST Complète ✅ (TERMINÉ)
-- [x] Endpoints de mouvement
-- [x] Endpoints caméra
-- [x] Endpoints capteurs
-- [x] Endpoints LEDs et buzzer
-- [x] Validation Pydantic complète
-- [x] 26 tests automatisés
+### Phase 2 : GUI Desktop PyQt6 (EN COURS)
+- [ ] Interface graphique pour contrôle visuel
+- [ ] Joystick virtuel
+- [ ] Monitoring capteurs en temps réel
+- [ ] Configuration servos
+- [ ] Enregistrement/replay trajectoires
 
-### Phase 3 : Intelligence (Prochaine étape)
+### Phase 3 : Intelligence
 - [ ] Navigation autonome
 - [ ] Évitement d'obstacles
 - [ ] Computer vision (YOLOv8)
@@ -252,4 +269,3 @@ Ce projet est sous licence CC BY-NC-SA 3.0.
 - 1 robot controller core
 - 3 modules intelligence (obstacle, vision, qr)
 - 10+ nouveaux tests
-
