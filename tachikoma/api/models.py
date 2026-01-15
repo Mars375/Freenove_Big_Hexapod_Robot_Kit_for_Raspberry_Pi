@@ -22,6 +22,10 @@ class LEDMode(str, Enum):
     BLINK = "blink"
     BREATHING = "breathing"
     RAINBOW = "rainbow"
+    POLICE = "police"
+    FIRE = "fire"
+    WAVE = "wave"
+    STROBE = "strobe"
 
 
 # ============= Movement Models =============
@@ -154,6 +158,54 @@ class LEDBrightnessRequest(BaseModel):
 class LEDRainbowRequest(BaseModel):
     """Request model for starting a rainbow animation on the LED strip."""
     iterations: int = Field(default=1, ge=1, description="Number of times to cycle the rainbow animation")
+
+
+class LEDPoliceRequest(BaseModel):
+    """Request model for police siren animation."""
+    duration: float = Field(default=5.0, ge=0.1, le=60.0, description="Animation duration in seconds")
+    speed: float = Field(default=0.1, ge=0.05, le=1.0, description="Flash speed in seconds")
+
+
+class LEDBreathingRequest(BaseModel):
+    """Request model for breathing animation."""
+    r: int = Field(..., ge=0, le=255, description="Red component")
+    g: int = Field(..., ge=0, le=255, description="Green component")
+    b: int = Field(..., ge=0, le=255, description="Blue component")
+    duration: float = Field(default=10.0, ge=1.0, le=60.0, description="Animation duration in seconds")
+    speed: float = Field(default=2.0, ge=0.5, le=5.0, description="Breathing speed (cycles per second)")
+
+
+class LEDFireRequest(BaseModel):
+    """Request model for fire animation."""
+    duration: float = Field(default=10.0, ge=1.0, le=60.0, description="Animation duration in seconds")
+    intensity: float = Field(default=1.0, ge=0.1, le=1.0, description="Fire intensity (0.1 to 1.0)")
+
+
+class LEDWaveRequest(BaseModel):
+    """Request model for wave animation."""
+    r: int = Field(..., ge=0, le=255, description="Red component")
+    g: int = Field(..., ge=0, le=255, description="Green component")
+    b: int = Field(..., ge=0, le=255, description="Blue component")
+    duration: float = Field(default=10.0, ge=1.0, le=60.0, description="Animation duration in seconds")
+    speed: float = Field(default=0.5, ge=0.1, le=2.0, description="Wave speed")
+
+
+class LEDStrobeRequest(BaseModel):
+    """Request model for strobe animation."""
+    r: int = Field(default=255, ge=0, le=255, description="Red component")
+    g: int = Field(default=255, ge=0, le=255, description="Green component")
+    b: int = Field(default=255, ge=0, le=255, description="Blue component")
+    duration: float = Field(default=5.0, ge=0.1, le=60.0, description="Animation duration in seconds")
+    speed: float = Field(default=0.05, ge=0.01, le=0.5, description="Strobe speed in seconds")
+
+
+class LEDChaseRequest(BaseModel):
+    """Request model for chase animation."""
+    r: int = Field(..., ge=0, le=255, description="Red component")
+    g: int = Field(..., ge=0, le=255, description="Green component")
+    b: int = Field(..., ge=0, le=255, description="Blue component")
+    duration: float = Field(default=10.0, ge=1.0, le=60.0, description="Animation duration in seconds")
+    speed: float = Field(default=0.1, ge=0.05, le=1.0, description="Chase speed")
 
 
 # ============= Buzzer Models =============
