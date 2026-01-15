@@ -213,7 +213,7 @@ class LEDChaseRequest(BaseModel):
 class BuzzerCommand(BaseModel):
     """Command to control buzzer"""
     frequency: int = Field(..., ge=100, le=5000, description="Buzzer frequency in Hz")
-    duration: float = Field(..., ge=0.1, le=5.0, description="Buzzer duration in seconds")
+    duration: float = Field(..., ge=0.1, le=60.0, description="Buzzer duration in seconds (max 60s)")
     enabled: bool = Field(default=True, description="Enable buzzer beep")
 
 
