@@ -1,5 +1,6 @@
 """LED Device Layer using SPI-based WS281X driver."""
 import logging
+import asyncio
 from typing import Optional, Dict, Any, Tuple
 from tachikoma.core.hardware.interfaces.base import IHardwareComponent, HardwareStatus
 from tachikoma.core.hardware.drivers.led import LEDController, ColorSequence, LedMode
@@ -146,6 +147,7 @@ class LEDStrip(IHardwareComponent):
         except Exception as e:
             logger.error(f"Failed to set pixel {pixel}: {e}")
             return False
+    
     def show(self) -> None:
         """Update the LED strip to display current colors."""
         if not self.is_available():
@@ -178,43 +180,39 @@ class LEDStrip(IHardwareComponent):
             logger.error(f"Failed to set brightness: {e}")
             return False
     
-    def rainbow_cycle(self, iterations: int = 1) -> bool:
-        """Run rainbow cycle animation.
+    async def rainbow_cycle(self, duration: float = 10.0, speed: float = 0.05) -> bool:
+        """
+        Cycle through rainbow colors.
         
         Args:
-            iterations: Number of cycles to run
-            
+            duration: Total animation duration in seconds
+            speed: Time per cycle in seconds (lower = faster)
+        
         Returns:
-            bool: True if successful
+            bool: True if animation completed successfully
         """
-        if not self.is_available():
-            logger.warning("Cannot run rainbow: LED strip not available")
+        if not self.is_available() or not self._animator:
+            logger.warning("Cannot run rainbow: LED strip or animator not available")
             return False
         
         try:
-            import time
-            for j in range(256 * iterations):
-                for i in range(self.led_count):
-                    color = self._driver.wheel(
-                        (i * 256 // self.led_count + j) % 256
-                    )
-                    self._driver.set_color(*color, i)
-                self._driver.show()
-                time.sleep(0.002)
-            
             self._current_mode = LedMode.RAINBOW
+            await self._animator.rainbow(duration=duration, speed=speed)
             return True
+        except asyncio.CancelledError:
+            logger.info("rainbow_cycle cancelled")
+            raise
         except Exception as e:
-            logger.error(f"Failed to run rainbow cycle: {e}")
+            logger.error(f"rainbow_cycle failed: {e}")
             return False
     
-    # ============= New Animation Methods =============
+    # ============= Animation Methods =============
     
     async def police(self, duration: float = 5.0, speed: float = 0.1) -> bool:
         """Run police siren animation."""
         if not self.is_available() or not self._animator:
             return False
-        self._current_mode = LedMode.CHASE  # Using CHASE enum value
+        self._current_mode = LedMode.POLICE
         return await self._animator.police(duration, speed)
     
     async def breathing(self, r: int, g: int, b: int, duration: float = 10.0, speed: float = 2.0) -> bool:
@@ -228,21 +226,21 @@ class LEDStrip(IHardwareComponent):
         """Run fire animation."""
         if not self.is_available() or not self._animator:
             return False
-        self._current_mode = LedMode.BLINK  # Using BLINK enum value
+        self._current_mode = LedMode.FIRE
         return await self._animator.fire(duration, intensity)
     
     async def wave(self, r: int, g: int, b: int, duration: float = 10.0, speed: float = 0.5) -> bool:
         """Run wave animation."""
         if not self.is_available() or not self._animator:
             return False
-        self._current_mode = LedMode.CHASE  # Using CHASE enum value
+        self._current_mode = LedMode.WAVE
         return await self._animator.wave(r, g, b, duration, speed)
     
     async def strobe(self, r: int, g: int, b: int, duration: float = 5.0, speed: float = 0.05) -> bool:
         """Run strobe animation."""
         if not self.is_available() or not self._animator:
             return False
-        self._current_mode = LedMode.BLINK
+        self._current_mode = LedMode.STROBE
         return await self._animator.strobe(r, g, b, duration, speed)
     
     async def chase(self, r: int, g: int, b: int, duration: float = 10.0, speed: float = 0.1) -> bool:
@@ -252,7 +250,7 @@ class LEDStrip(IHardwareComponent):
         self._current_mode = LedMode.CHASE
         return await self._animator.chase(r, g, b, duration, speed)
     
-    # ============= End New Animation Methods =============
+    # ============= Control Methods =============
     
     def off(self) -> bool:
         """Turn off all LEDs.

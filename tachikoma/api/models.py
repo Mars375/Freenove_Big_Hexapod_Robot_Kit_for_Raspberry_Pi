@@ -157,12 +157,12 @@ class LEDBrightnessRequest(BaseModel):
 
 class LEDRainbowRequest(BaseModel):
     """Request model for starting a rainbow animation on the LED strip."""
-    iterations: int = Field(default=1, ge=1, description="Number of times to cycle the rainbow animation")
-
+    duration: float = Field(default=10.0, ge=1.0, le=3600.0, description="Animation duration in seconds")
+    speed: float = Field(default=0.05, ge=0.01, le=1.0, description="Rainbow cycle speed in seconds")
 
 class LEDPoliceRequest(BaseModel):
     """Request model for police siren animation."""
-    duration: float = Field(default=5.0, ge=0.1, le=60.0, description="Animation duration in seconds")
+    duration: float = Field(default=5.0, ge=0.1, le=3600, description="Animation duration in seconds")
     speed: float = Field(default=0.1, ge=0.05, le=1.0, description="Flash speed in seconds")
 
 
@@ -171,13 +171,13 @@ class LEDBreathingRequest(BaseModel):
     r: int = Field(..., ge=0, le=255, description="Red component")
     g: int = Field(..., ge=0, le=255, description="Green component")
     b: int = Field(..., ge=0, le=255, description="Blue component")
-    duration: float = Field(default=10.0, ge=1.0, le=60.0, description="Animation duration in seconds")
+    duration: float = Field(default=10.0, ge=1.0, le=3600.0, description="Animation duration in seconds")
     speed: float = Field(default=2.0, ge=0.5, le=5.0, description="Breathing speed (cycles per second)")
 
 
 class LEDFireRequest(BaseModel):
     """Request model for fire animation."""
-    duration: float = Field(default=10.0, ge=1.0, le=60.0, description="Animation duration in seconds")
+    duration: float = Field(default=10.0, ge=1.0, le=3600.0, description="Animation duration in seconds")
     intensity: float = Field(default=1.0, ge=0.1, le=1.0, description="Fire intensity (0.1 to 1.0)")
 
 
@@ -186,7 +186,7 @@ class LEDWaveRequest(BaseModel):
     r: int = Field(..., ge=0, le=255, description="Red component")
     g: int = Field(..., ge=0, le=255, description="Green component")
     b: int = Field(..., ge=0, le=255, description="Blue component")
-    duration: float = Field(default=10.0, ge=1.0, le=60.0, description="Animation duration in seconds")
+    duration: float = Field(default=10.0, ge=1.0, le=3600.0, description="Animation duration in seconds")
     speed: float = Field(default=0.5, ge=0.1, le=2.0, description="Wave speed")
 
 
@@ -195,7 +195,7 @@ class LEDStrobeRequest(BaseModel):
     r: int = Field(default=255, ge=0, le=255, description="Red component")
     g: int = Field(default=255, ge=0, le=255, description="Green component")
     b: int = Field(default=255, ge=0, le=255, description="Blue component")
-    duration: float = Field(default=5.0, ge=0.1, le=60.0, description="Animation duration in seconds")
+    duration: float = Field(default=5.0, ge=0.1, le=3600.0, description="Animation duration in seconds")
     speed: float = Field(default=0.05, ge=0.01, le=0.5, description="Strobe speed in seconds")
 
 
@@ -204,7 +204,7 @@ class LEDChaseRequest(BaseModel):
     r: int = Field(..., ge=0, le=255, description="Red component")
     g: int = Field(..., ge=0, le=255, description="Green component")
     b: int = Field(..., ge=0, le=255, description="Blue component")
-    duration: float = Field(default=10.0, ge=1.0, le=60.0, description="Animation duration in seconds")
+    duration: float = Field(default=10.0, ge=1.0, le=3600.0, description="Animation duration in seconds")
     speed: float = Field(default=0.1, ge=0.05, le=1.0, description="Chase speed")
 
 

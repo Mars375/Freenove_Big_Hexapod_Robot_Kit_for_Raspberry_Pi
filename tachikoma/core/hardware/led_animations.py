@@ -32,6 +32,98 @@ class LEDAnimations:
         """Request animation to stop."""
         self._stop_requested = True
 
+    def _hsv_to_rgb(self, h: float, s: float, v: float) -> Tuple[int, int, int]:
+        """
+        Convert HSV color to RGB.
+        
+        Args:
+            h: Hue (0.0 to 1.0)
+            s: Saturation (0.0 to 1.0)
+            v: Value/Brightness (0.0 to 1.0)
+            
+        Returns:
+            Tuple of (r, g, b) with values 0-255
+        """
+        if s == 0.0:
+            r = g = b = int(v * 255)
+            return (r, g, b)
+        
+        i = int(h * 6.0)
+        f = (h * 6.0) - i
+        p = v * (1.0 - s)
+        q = v * (1.0 - s * f)
+        t = v * (1.0 - s * (1.0 - f))
+        i = i % 6
+        
+        if i == 0:
+            r, g, b = v, t, p
+        elif i == 1:
+            r, g, b = q, v, p
+        elif i == 2:
+            r, g, b = p, v, t
+        elif i == 3:
+            r, g, b = p, q, v
+        elif i == 4:
+            r, g, b = t, p, v
+        else:
+            r, g, b = v, p, q
+        
+        return (int(r * 255), int(g * 255), int(b * 255))
+
+    async def rainbow(self, duration: float = 10.0, speed: float = 0.05) -> bool:
+        """
+        Rainbow cycle animation - each LED shows a different color that cycles.
+    
+        Args:
+            duration: Total animation duration in seconds
+            speed: Time per color cycle in seconds
+        """
+        logger.info("led_animation.rainbow", duration=duration, speed=speed)
+        self._running = True
+        self._stop_requested = False
+    
+        start_time = time.time()
+        hue_offset = 0
+    
+        try:
+            while time.time() - start_time < duration and not self._stop_requested:
+                # Set each LED to a different color based on its position
+                for i in range(self.num_leds):
+                    # Calculate hue for this LED (evenly spaced around the color wheel)
+                    # Add hue_offset to make the rainbow rotate
+                    hue = ((i * 256 // self.num_leds) + hue_offset) % 256
+                
+                    # Convert to RGB
+                    r, g, b = self._hsv_to_rgb(hue / 255.0, 1.0, 1.0)
+                
+                    # Set the pixel
+                    self.led_strip.set_pixel(i, r, g, b)
+            
+                # Update the display
+                self.led_strip.show()
+            
+                # Increment hue offset to make rainbow rotate
+                hue_offset = (hue_offset + 1) % 256
+            
+                # Control speed of rotation
+                await asyncio.sleep(speed / 256)
+        
+            self._running = False
+            return True
+                
+        except asyncio.CancelledError:
+            logger.info("led_animation.rainbow_cancelled")
+            self._running = False
+            # Turn off LEDs on cancel
+            for i in range(self.num_leds):
+                self.led_strip.set_pixel(i, 0, 0, 0)
+            self.led_strip.show()
+            raise
+        except Exception as e:
+            logger.error("led_animation.rainbow_failed", error=str(e))
+            self._running = False
+            return False
+
     async def police(self, duration: float = 5.0, speed: float = 0.1) -> bool:
         """
         Police siren animation - alternating red and blue.
@@ -71,6 +163,10 @@ class LEDAnimations:
             self._running = False
             return True
             
+        except asyncio.CancelledError:
+            logger.info("led_animation.police_cancelled")
+            self._running = False
+            raise
         except Exception as e:
             logger.error("led_animation.police_failed", error=str(e))
             self._running = False
@@ -128,6 +224,10 @@ class LEDAnimations:
             self._running = False
             return True
             
+        except asyncio.CancelledError:
+            logger.info("led_animation.breathing_cancelled")
+            self._running = False
+            raise
         except Exception as e:
             logger.error("led_animation.breathing_failed", error=str(e))
             self._running = False
@@ -164,6 +264,10 @@ class LEDAnimations:
             self._running = False
             return True
             
+        except asyncio.CancelledError:
+            logger.info("led_animation.fire_cancelled")
+            self._running = False
+            raise
         except Exception as e:
             logger.error("led_animation.fire_failed", error=str(e))
             self._running = False
@@ -207,6 +311,10 @@ class LEDAnimations:
             self._running = False
             return True
             
+        except asyncio.CancelledError:
+            logger.info("led_animation.wave_cancelled")
+            self._running = False
+            raise
         except Exception as e:
             logger.error("led_animation.wave_failed", error=str(e))
             self._running = False
@@ -244,6 +352,10 @@ class LEDAnimations:
             self._running = False
             return True
             
+        except asyncio.CancelledError:
+            logger.info("led_animation.strobe_cancelled")
+            self._running = False
+            raise
         except Exception as e:
             logger.error("led_animation.strobe_failed", error=str(e))
             self._running = False
@@ -284,6 +396,10 @@ class LEDAnimations:
             self._running = False
             return True
             
+        except asyncio.CancelledError:
+            logger.info("led_animation.chase_cancelled")
+            self._running = False
+            raise
         except Exception as e:
             logger.error("led_animation.chase_failed", error=str(e))
             self._running = False
