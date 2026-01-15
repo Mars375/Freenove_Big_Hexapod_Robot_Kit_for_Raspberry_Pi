@@ -3,6 +3,7 @@ import logging
 from typing import Optional, Dict, Any, Tuple
 from tachikoma.core.hardware.interfaces.base import IHardwareComponent, HardwareStatus
 from tachikoma.core.hardware.drivers.led import LEDController, ColorSequence, LedMode
+from tachikoma.core.hardware.led_animations import LEDAnimations
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ class LEDStrip(IHardwareComponent):
         self.device = device
         
         self._driver: Optional[LEDController] = None
+        self._animator: Optional[LEDAnimations] = None
         self._status = HardwareStatus.UNINITIALIZED
         self._current_color: Tuple[int, int, int] = (0, 0, 0)
         self._current_mode = LedMode.OFF
@@ -64,6 +66,9 @@ class LEDStrip(IHardwareComponent):
                 device=self.device
             )
             
+            # Create animator
+            self._animator = LEDAnimations(self._driver, self.led_count)
+            
             # Check if driver is available
             if not self._driver.is_available():
                 logger.warning("LED driver in mock mode (SPI not available)")
@@ -85,6 +90,8 @@ class LEDStrip(IHardwareComponent):
     async def cleanup(self) -> None:
         """Clean up LED strip resources."""
         try:
+            if self._animator:
+                self._animator.stop()
             if self._driver:
                 self._driver.close()
                 logger.info("LED strip cleaned up")
@@ -192,6 +199,52 @@ class LEDStrip(IHardwareComponent):
             logger.error(f"Failed to run rainbow cycle: {e}")
             return False
     
+    # ============= New Animation Methods =============
+    
+    async def police(self, duration: float = 5.0, speed: float = 0.1) -> bool:
+        """Run police siren animation."""
+        if not self.is_available() or not self._animator:
+            return False
+        self._current_mode = LedMode.CHASE  # Using CHASE enum value
+        return await self._animator.police(duration, speed)
+    
+    async def breathing(self, r: int, g: int, b: int, duration: float = 10.0, speed: float = 2.0) -> bool:
+        """Run breathing animation."""
+        if not self.is_available() or not self._animator:
+            return False
+        self._current_mode = LedMode.BREATHING
+        return await self._animator.breathing(r, g, b, duration, speed)
+    
+    async def fire(self, duration: float = 10.0, intensity: float = 1.0) -> bool:
+        """Run fire animation."""
+        if not self.is_available() or not self._animator:
+            return False
+        self._current_mode = LedMode.BLINK  # Using BLINK enum value
+        return await self._animator.fire(duration, intensity)
+    
+    async def wave(self, r: int, g: int, b: int, duration: float = 10.0, speed: float = 0.5) -> bool:
+        """Run wave animation."""
+        if not self.is_available() or not self._animator:
+            return False
+        self._current_mode = LedMode.CHASE  # Using CHASE enum value
+        return await self._animator.wave(r, g, b, duration, speed)
+    
+    async def strobe(self, r: int, g: int, b: int, duration: float = 5.0, speed: float = 0.05) -> bool:
+        """Run strobe animation."""
+        if not self.is_available() or not self._animator:
+            return False
+        self._current_mode = LedMode.BLINK
+        return await self._animator.strobe(r, g, b, duration, speed)
+    
+    async def chase(self, r: int, g: int, b: int, duration: float = 10.0, speed: float = 0.1) -> bool:
+        """Run chase animation."""
+        if not self.is_available() or not self._animator:
+            return False
+        self._current_mode = LedMode.CHASE
+        return await self._animator.chase(r, g, b, duration, speed)
+    
+    # ============= End New Animation Methods =============
+    
     def off(self) -> bool:
         """Turn off all LEDs.
         
@@ -203,6 +256,8 @@ class LEDStrip(IHardwareComponent):
             return False
         
         try:
+            if self._animator:
+                self._animator.stop()
             self._driver.off()
             self._current_color = (0, 0, 0)
             self._current_mode = LedMode.OFF
