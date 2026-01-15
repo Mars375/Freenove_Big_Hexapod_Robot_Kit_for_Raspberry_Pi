@@ -27,7 +27,7 @@ async def set_color(request: LEDColorRequest):
         led_strip = await factory.get_led_strip()
         if not led_strip.is_available():
             raise HardwareNotAvailableError("LED strip is not available")
-        
+
         if not led_strip.set_color(request.r, request.g, request.b):
             raise HTTPException(status_code=500, detail="Failed to set LED color")
 
@@ -48,7 +48,7 @@ async def set_brightness(request: LEDBrightnessRequest):
         led_strip = await factory.get_led_strip()
         if not led_strip.is_available():
             raise HardwareNotAvailableError("LED strip is not available")
-        
+
         if not led_strip.set_brightness(request.brightness):
             raise HTTPException(status_code=500, detail="Failed to set LED brightness")
 
@@ -91,7 +91,8 @@ async def start_police(request: LEDPoliceRequest):
         if not led_strip.is_available():
             raise HardwareNotAvailableError("LED strip is not available")
 
-        if not led_strip.police(duration=request.duration, speed=request.speed):
+        # ✅ AJOUT de await
+        if not await led_strip.police(duration=request.duration, speed=request.speed):
             raise HTTPException(status_code=500, detail="Failed to start police animation")
 
         return StandardResponse(
@@ -112,7 +113,8 @@ async def start_breathing(request: LEDBreathingRequest):
         if not led_strip.is_available():
             raise HardwareNotAvailableError("LED strip is not available")
 
-        if not led_strip.breathing(
+        # ✅ AJOUT de await
+        if not await led_strip.breathing(
             r=request.r, g=request.g, b=request.b,
             duration=request.duration, speed=request.speed
         ):
@@ -140,7 +142,8 @@ async def start_fire(request: LEDFireRequest):
         if not led_strip.is_available():
             raise HardwareNotAvailableError("LED strip is not available")
 
-        if not led_strip.fire(duration=request.duration, intensity=request.intensity):
+        # ✅ AJOUT de await
+        if not await led_strip.fire(duration=request.duration, intensity=request.intensity):
             raise HTTPException(status_code=500, detail="Failed to start fire animation")
 
         return StandardResponse(
@@ -161,7 +164,8 @@ async def start_wave(request: LEDWaveRequest):
         if not led_strip.is_available():
             raise HardwareNotAvailableError("LED strip is not available")
 
-        if not led_strip.wave(
+        # ✅ AJOUT de await
+        if not await led_strip.wave(
             r=request.r, g=request.g, b=request.b,
             duration=request.duration, speed=request.speed
         ):
@@ -189,7 +193,8 @@ async def start_strobe(request: LEDStrobeRequest):
         if not led_strip.is_available():
             raise HardwareNotAvailableError("LED strip is not available")
 
-        if not led_strip.strobe(
+        # ✅ AJOUT de await
+        if not await led_strip.strobe(
             r=request.r, g=request.g, b=request.b,
             duration=request.duration, speed=request.speed
         ):
@@ -217,7 +222,8 @@ async def start_chase(request: LEDChaseRequest):
         if not led_strip.is_available():
             raise HardwareNotAvailableError("LED strip is not available")
 
-        if not led_strip.chase(
+        # ✅ AJOUT de await
+        if not await led_strip.chase(
             r=request.r, g=request.g, b=request.b,
             duration=request.duration, speed=request.speed
         ):

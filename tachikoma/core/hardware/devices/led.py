@@ -67,7 +67,7 @@ class LEDStrip(IHardwareComponent):
             )
             
             # Create animator
-            self._animator = LEDAnimations(self._driver, self.led_count)
+            self._animator = LEDAnimations(self, self.led_count)
             
             # Check if driver is available
             if not self._driver.is_available():
@@ -146,7 +146,16 @@ class LEDStrip(IHardwareComponent):
         except Exception as e:
             logger.error(f"Failed to set pixel {pixel}: {e}")
             return False
+    def show(self) -> None:
+        """Update the LED strip to display current colors."""
+        if not self.is_available():
+            return
     
+        try:
+            self._driver.show()
+        except Exception as e:
+            logger.error(f"Failed to show LEDs: {e}")
+
     def set_brightness(self, brightness: int) -> bool:
         """Set overall brightness.
         
