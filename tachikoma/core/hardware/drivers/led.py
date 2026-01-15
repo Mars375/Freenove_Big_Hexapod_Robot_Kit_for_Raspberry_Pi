@@ -25,10 +25,13 @@ class LedMode(Enum):
     SOLID = 1
     COLOR_WIPE = 2
     RAINBOW = 4
-    BREATHING = 5      # ✅ AJOUT
-    CHASE = 6          # ✅ AJOUT
-    BLINK = 7          # ✅ AJOUT (pour strobe/fire)
+    BREATHING = 5
+    CHASE = 6
+    BLINK = 7
     WAVE = 8
+    POLICE = 9      # ✅ AJOUT
+    FIRE = 10       # ✅ AJOUT
+    STROBE = 11     # ✅ AJOUT
 
 class ColorSequence(Enum):
     """LED color sequence types for different strips."""
