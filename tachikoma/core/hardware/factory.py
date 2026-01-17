@@ -1,4 +1,5 @@
 """Hardware factory for creating controller instances with HAL architecture."""
+import platform
 from typing import Optional
 import structlog
 
@@ -8,6 +9,7 @@ from tachikoma.core.hardware.interfaces.i2c import I2CInterface, SMBusI2CInterfa
 from tachikoma.core.hardware.drivers import (
     PCA9685,
     PCA9685ServoController,
+    MockServoController,
     ADC,
     MPU6050,
     UltrasonicSensor,
@@ -212,6 +214,16 @@ class HardwareFactory:
             logger.debug("hardware_factory.reusing_servo_controller")
             return self._servo_controller
         
+        if self._should_use_mock_servo():
+            logger.info(
+                "hardware_factory.creating_servo_controller",
+                type="mock",
+                channels=32,
+            )
+            self._servo_controller = MockServoController(channels=32)
+            await self._servo_controller.initialize()
+            return self._servo_controller
+
         # Pour l'instant, on supporte uniquement PCA9685
         # Pourrait être configuré via settings dans le futur
         servo_type = "pca9685"  # settings.hardware.servo_type
@@ -240,6 +252,18 @@ class HardwareFactory:
             raise ValueError(f"Type de servo inconnu: {servo_type}")
         
         return self._servo_controller
+
+    def _should_use_mock_servo(self) -> bool:
+        if self.settings.MOCK_HARDWARE:
+            return True
+
+        system = platform.system().lower()
+        machine = platform.machine().lower()
+
+        if system in {"windows", "darwin"}:
+            return True
+
+        return machine in {"x86_64", "amd64", "i386", "i686"}
     
     def get_servo_controller(self) -> Optional[IServoController]:
         """Récupère l'instance existante du contrôleur de servos.

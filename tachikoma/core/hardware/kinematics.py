@@ -4,11 +4,13 @@ This module provides the mathematical foundation for converting between
 Cartesian foot positions and servo joint angles.
 """
 import math
-from typing import Tuple, Optional, List
+from typing import List, Optional, Tuple
+
 import structlog
 
-logger = structlog.get_logger()
+from tachikoma.core.models.config import RobotDimensions
 
+logger = structlog.get_logger()
 
 class HexapodKinematics:
     """3-DOF leg kinematics for hexapod robot.
@@ -26,28 +28,14 @@ class HexapodKinematics:
         - Femur (β): Rotation of thigh segment
         - Tibia (γ): Rotation of shin segment
     
-    Segment lengths (default, mm):
-        - L1 (coxa): 33mm
-        - L2 (femur): 90mm
-        - L3 (tibia): 110mm
+    Segment lengths (mm) are loaded from the hardware configuration.
     """
     
-    def __init__(
-        self, 
-        coxa_length: float = 33.0, 
-        femur_length: float = 90.0, 
-        tibia_length: float = 110.0
-    ):
-        """Initialize kinematics with segment lengths.
-        
-        Args:
-            coxa_length: Length of coxa (hip) segment in mm
-            femur_length: Length of femur (thigh) segment in mm
-            tibia_length: Length of tibia (shin) segment in mm
-        """
-        self.L1 = coxa_length
-        self.L2 = femur_length
-        self.L3 = tibia_length
+    def __init__(self, dimensions: RobotDimensions):
+        """Initialize kinematics with provided segment lengths."""
+        self.L1 = dimensions.l1
+        self.L2 = dimensions.l2
+        self.L3 = dimensions.l3
         
         # Workspace limits
         self.max_reach = self.L1 + self.L2 + self.L3
@@ -126,6 +114,13 @@ class HexapodKinematics:
         except (ValueError, ZeroDivisionError) as e:
             logger.error("kinematics.inverse_failed", x=x, y=y, z=z, error=str(e))
             return None
+
+    def calculate_ik(self, x: float, y: float, z: float) -> Optional[Tuple[int, int, int]]:
+        """Inverse kinematics with servo-centered angles (90° neutral)."""
+        result = self.inverse(x, y, z)
+        if result is None:
+            return None
+        return tuple(angle + 90 for angle in result)
     
     def forward(self, alpha: float, beta: float, gamma: float) -> Tuple[float, float, float]:
         """Calculate foot position from joint angles (forward kinematics).

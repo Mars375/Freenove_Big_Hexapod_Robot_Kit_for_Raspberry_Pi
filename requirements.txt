@@ -29,6 +29,7 @@ python-json-logger==3.2.1
 # Utilities
 numpy==2.2.1
 pyserial==3.5
+PyYAML==6.0.2
 
 # Development (optional)
 pytest==8.3.4

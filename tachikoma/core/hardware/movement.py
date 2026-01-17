@@ -2,17 +2,20 @@
 
 This module provides the high-level movement controller that:
 1. Manages 6 legs with proper coordinate transforms
-2. Applies calibration offsets for accurate positioning
+2. Applies per-joint offsets from configuration
 3. Executes gaits via the GaitExecutor
 4. Communicates with servos via IServoController
 """
 import asyncio
 import math
-import os
-from typing import Tuple, List, Optional, Dict, Any
+from typing import List, Optional, Any
 from dataclasses import dataclass, field
 import structlog
-from gpiozero import OutputDevice
+
+try:
+    from gpiozero import OutputDevice
+except Exception:
+    OutputDevice = None
 
 
 from tachikoma.core.exceptions import HardwareNotAvailableError, CommandExecutionError
@@ -20,6 +23,7 @@ from tachikoma.core.hardware.interfaces import IServoController
 from tachikoma.core.hardware.kinematics import HexapodKinematics
 from tachikoma.core.hardware.gaits import GaitExecutor, GaitType
 from tachikoma.core.hardware.controllers.pid import PIDController
+from tachikoma.core.models.config import GlobalRobotConfig, LegConfig, load_robot_config
 
 
 logger = structlog.get_logger()
@@ -36,19 +40,6 @@ LEG_ANGLES = [54, 0, -54, -126, 180, 126]
 LEG_OFFSETS = [94, 85, 94, 94, 85, 94]
 
 
-# Servo channel mapping for each leg
-# [coxa_channel, femur_channel, tibia_channel]
-SERVO_MAPPING = [
-    [15, 14, 13],  # Leg 0 (Right Front)
-    [12, 11, 10],  # Leg 1 (Right Middle)
-    [9, 8, 31],    # Leg 2 (Right Rear)
-    [22, 23, 27],  # Leg 3 (Left Rear)
-    [19, 20, 21],  # Leg 4 (Left Middle)
-    [16, 17, 18],  # Leg 5 (Left Front)
-]
-
-
-
 @dataclass
 class Leg:
     """Single leg configuration and state."""
@@ -57,7 +48,7 @@ class Leg:
     servo_pins: List[int]
     mount_angle: float  # Degrees from body X-axis
     offset: float       # Distance offset for transform
-    is_left: bool       # True for left side legs (3, 4, 5)
+    is_left: bool       # True for mirrored legs
 
     # Current state
     position: List[float] = field(default_factory=lambda: [140.0, 0.0, 0.0])
@@ -76,7 +67,7 @@ class MovementController:
     The controller maintains:
     - Body points: foot positions relative to body center
     - Leg positions: foot positions in leg-local frame
-    - Calibration angles: per-leg servo offsets from point.txt
+    - Joint offsets: per-leg servo offsets from YAML config
     - Current angles: actual servo angles being commanded
     """
 
@@ -87,12 +78,20 @@ class MovementController:
     # Initial neutral leg position
     NEUTRAL_POSITION = [140.0, 0.0, 0.0]
 
-    def __init__(self, servo_controller: Optional[IServoController] = None, imu_sensor: Any = None):
+    def __init__(
+        self,
+        servo_controller: Optional[IServoController] = None,
+        imu_sensor: Any = None,
+        config: Optional[GlobalRobotConfig] = None,
+        power_pin: Optional[int] = None,
+    ):
         """Initialize movement controller.
 
         Args:
             servo_controller: Servo controller implementation (injected)
             imu_sensor: IMU sensor for balancing
+            config: Robot configuration for servo channels and dimensions
+            power_pin: Optional GPIO pin to control servo power
         """
         self._servo = servo_controller
         self._imu = imu_sensor
@@ -109,6 +108,9 @@ class MovementController:
         self._balance_task = None
         self._pid_roll = PIDController(kp=0.5, ki=0.01, kd=0.1)
         self._pid_pitch = PIDController(kp=0.5, ki=0.01, kd=0.1)
+
+        # Robot configuration
+        self._config = config or load_robot_config()
 
         # Body parameters
         self.body_height = self.DEFAULT_BODY_HEIGHT
@@ -129,110 +131,72 @@ class MovementController:
             [140.0, 0.0, 0.0] for _ in range(6)
         ]
 
-        # Calibration data
-        self.calibration_leg_positions = self._read_calibration()
-        self.calibration_angles = [[0, 0, 0] for _ in range(6)]
+        # Angle cache (per-leg)
         self.current_angles = [[90, 0, 0] for _ in range(6)]
 
         # Initialize legs
         self.legs = [
             Leg(
                 id=i,
-                servo_pins=SERVO_MAPPING[i],
+                servo_pins=[leg.coxa, leg.femur, leg.tibia],
                 mount_angle=LEG_ANGLES[i],
                 offset=LEG_OFFSETS[i],
-                is_left=(i >= 3)
+                is_left=leg.is_mirrored,
             )
-            for i in range(6)
+            for i, leg in enumerate(self._config.legs)
         ]
 
         # Kinematics engine
-        self.kinematics = HexapodKinematics()
+        self.kinematics = HexapodKinematics(self._config.dimensions)
 
         # Gait executor (created on first use)
         self._gait: Optional[GaitExecutor] = None
 
-        # Power control (GPIO 4 is active high disable)
-        try:
-            self._power_pin = OutputDevice(4)
-            # Power ON by default
-            self._power_pin.off()
-        except Exception:
-            self._power_pin = None
-            logger.warning("movement.power_pin_failed")
-
-        # Apply initial calibration
-        self._calibrate()
+        # Power control (optional)
+        self._power_pin = None
+        if power_pin is not None:
+            if OutputDevice is None:
+                logger.warning("movement.power_pin_unavailable", pin=power_pin)
+            else:
+                try:
+                    self._power_pin = OutputDevice(power_pin)
+                    self._power_pin.off()
+                except Exception:
+                    self._power_pin = None
+                    logger.warning("movement.power_pin_failed", pin=power_pin)
 
         logger.info(
             "movement_controller.created",
             has_servo=servo_controller is not None
         )
 
-    def _read_calibration(self) -> List[List[int]]:
-        """Read calibration data from point.txt.
+    def _transform_angle(self, angle: float, leg_config: LegConfig, joint_index: int) -> int:
+        """Apply joint offset, mirroring, and clamp to servo-safe range."""
+        if joint_index < 0 or joint_index >= len(leg_config.offsets):
+            raise ValueError(f"Invalid joint_index: {joint_index}")
 
-        Returns:
-            List of [x, y, z] calibration offsets for each leg
-        """
-        default = [[140, 0, 0] for _ in range(6)]
+        adjusted = angle + leg_config.offsets[joint_index]
+        if leg_config.is_mirrored:
+            adjusted = 180 - adjusted
 
-        try:
-            # Try current directory first, then legacy location
-            for path in ["point.txt", "legacy/Code/Server/point.txt"]:
-                if os.path.exists(path):
-                    with open(path, "r") as f:
-                        lines = f.readlines()
-                        data = []
-                        for line in lines:
-                            line = line.strip()
-                            if line:
-                                parts = line.split("\t")
-                                if len(parts) >= 3:
-                                    data.append([int(p) for p in parts[:3]])
-                        if len(data) >= 6:
-                            logger.info("movement.calibration_loaded", path=path)
-                            return data[:6]
+        adjusted = max(0.0, min(180.0, adjusted))
+        return int(round(adjusted))
 
-            logger.warning("movement.no_calibration_file")
-            return default
+    def set_leg_angles(self, leg_index: int, coxa: float, femur: float, tibia: float) -> None:
+        """Set angles for a single leg after applying offsets and mirroring."""
+        if not self._servo:
+            raise HardwareNotAvailableError("No servo controller set.")
 
-        except Exception as e:
-            logger.warning("movement.calibration_read_failed", error=str(e))
-            return default
+        if leg_index < 0 or leg_index >= len(self._config.legs):
+            raise ValueError(f"Invalid leg_index: {leg_index}")
 
-    def _calibrate(self) -> None:
-        """Calculate calibration angles from calibration positions.
+        leg_config = self._config.legs[leg_index]
+        channels = (leg_config.coxa, leg_config.femur, leg_config.tibia)
+        raw_angles = (coxa, femur, tibia)
 
-        This converts the calibration foot positions to joint angles
-        and computes the offset from neutral required for each joint.
-        """
-        # Reset to neutral leg positions
-        self.leg_positions = [[140.0, 0.0, 0.0] for _ in range(6)]
-
-        # Calculate angles for calibration positions
-        for i in range(6):
-            cal_pos = self.calibration_leg_positions[i]
-            # Note: legacy uses -z, x, y order for coordinate_to_angle
-            result = self.kinematics.inverse(-cal_pos[2], cal_pos[0], cal_pos[1])
-            if result:
-                self.calibration_angles[i] = list(result)
-
-        # Calculate neutral angles
-        neutral_angles = [[0, 0, 0] for _ in range(6)]
-        for i in range(6):
-            pos = self.leg_positions[i]
-            result = self.kinematics.inverse(-pos[2], pos[0], pos[1])
-            if result:
-                neutral_angles[i] = list(result)
-
-        # Compute offsets
-        for i in range(6):
-            self.calibration_angles[i][0] -= neutral_angles[i][0]
-            self.calibration_angles[i][1] -= neutral_angles[i][1]
-            self.calibration_angles[i][2] -= neutral_angles[i][2]
-
-        logger.debug("movement.calibrated", offsets=self.calibration_angles)
+        for joint_index, (channel, angle) in enumerate(zip(channels, raw_angles)):
+            transformed = self._transform_angle(angle, leg_config, joint_index)
+            self._servo.set_angle(channel, transformed)
 
     def _transform_coordinates(self, points: List[List[float]]) -> None:
         """Transform body-frame points to leg-local coordinates.
@@ -260,9 +224,8 @@ class MovementController:
 
         This is the core function that:
         1. Computes IK for each leg position
-        2. Applies calibration offsets
-        3. Applies left/right mirroring
-        4. Sends to servos
+        2. Applies YAML offsets and mirroring
+        3. Sends to servos
         """
         if not self._servo:
             return
@@ -272,64 +235,29 @@ class MovementController:
             logger.warning("movement.invalid_positions")
             return
 
-        # Calculate angles for each leg
+        # Calculate angles for each leg and send to servos
         for i in range(6):
             pos = self.leg_positions[i]
             # Legacy uses -z, x, y order
-            result = self.kinematics.inverse(-pos[2], pos[0], pos[1])
-            if result:
-                self.current_angles[i] = list(result)
+            result = self.kinematics.calculate_ik(-pos[2], pos[0], pos[1])
+            if not result:
+                continue
 
-        # Apply calibration and mirroring, then send to servos
-        for i in range(3):
-            # Right side legs (0, 1, 2)
-            right_angles = [
-                self._clamp(
-                    self.current_angles[i][0] + self.calibration_angles[i][0],
-                    0, 180
-                ),
-                self._clamp(
-                    90 - (self.current_angles[i][1] + self.calibration_angles[i][1]),
-                    0, 180
-                ),
-                self._clamp(
-                    self.current_angles[i][2] + self.calibration_angles[i][2],
-                    0, 180
-                ),
-            ]
+            self.current_angles[i] = list(result)
+            leg_config = self._config.legs[i]
+            channels = (leg_config.coxa, leg_config.femur, leg_config.tibia)
 
-            # Left side legs (3, 4, 5)
-            left_idx = i + 3
-            left_angles = [
-                self._clamp(
-                    self.current_angles[left_idx][0] + self.calibration_angles[left_idx][0],
-                    0, 180
-                ),
-                self._clamp(
-                    90 + self.current_angles[left_idx][1] + self.calibration_angles[left_idx][1],
-                    0, 180
-                ),
-                self._clamp(
-                    180 - (self.current_angles[left_idx][2] + self.calibration_angles[left_idx][2]),
-                    0, 180
-                ),
-            ]
+            for joint_index, (channel, angle) in enumerate(zip(channels, result)):
+                transformed = self._transform_angle(angle, leg_config, joint_index)
+                await self._send_servo_angle(channel, transformed)
 
-            # Send to servos
-            leg = self.legs[i]
-            await self._servo.set_angle_async(leg.servo_pins[0], right_angles[0])
-            await self._servo.set_angle_async(leg.servo_pins[1], right_angles[1])
-            await self._servo.set_angle_async(leg.servo_pins[2], right_angles[2])
-
-            left_leg = self.legs[left_idx]
-            await self._servo.set_angle_async(left_leg.servo_pins[0], left_angles[0])
-            await self._servo.set_angle_async(left_leg.servo_pins[1], left_angles[1])
-            await self._servo.set_angle_async(left_leg.servo_pins[2], left_angles[2])
-
-    @staticmethod
-    def _clamp(value: float, min_val: float, max_val: float) -> int:
-        """Clamp value to range and return as integer."""
-        return int(max(min_val, min(max_val, value)))
+    async def _send_servo_angle(self, channel: int, angle: int) -> None:
+        """Send angle using async API when available."""
+        set_angle_async = getattr(self._servo, "set_angle_async", None)
+        if set_angle_async is not None:
+            await set_angle_async(channel, angle)
+        else:
+            self._servo.set_angle(channel, angle)
 
     def set_servo_controller(self, servo_controller: IServoController) -> None:
         """Set servo controller after initialization (for lazy injection)."""
@@ -815,8 +743,7 @@ class MovementController:
     async def calibrate(self, step: int) -> bool:
         """Handle calibration step."""
         logger.info("movement.calibrate", step=step)
-        # Reconstruct legacy calibration if point.txt logic is needed
-        # For now, just a placeholder that matches the protocol
+        # Placeholder for future calibration workflow
         return True
 
     async def cleanup(self) -> None:

@@ -1,0 +1,56 @@
+{
+  "dimensions": {
+    "l1": 33,
+    "l2": 90,
+    "l3": 110
+  },
+  "gait": {
+    "step_height": 40,
+    "body_height": -25,
+    "step_delay": 0.01
+  },
+  "legs": [
+    {
+      "coxa": 15,
+      "femur": 14,
+      "tibia": 13,
+      "offsets": [0, 0, 0],
+      "is_mirrored": false
+    },
+    {
+      "coxa": 12,
+      "femur": 11,
+      "tibia": 10,
+      "offsets": [0, 0, 0],
+      "is_mirrored": false
+    },
+    {
+      "coxa": 9,
+      "femur": 8,
+      "tibia": 31,
+      "offsets": [0, 0, 0],
+      "is_mirrored": false
+    },
+    {
+      "coxa": 22,
+      "femur": 23,
+      "tibia": 27,
+      "offsets": [0, 0, 0],
+      "is_mirrored": true
+    },
+    {
+      "coxa": 19,
+      "femur": 20,
+      "tibia": 21,
+      "offsets": [0, 0, 0],
+      "is_mirrored": true
+    },
+    {
+      "coxa": 16,
+      "femur": 17,
+      "tibia": 18,
+      "offsets": [0, 0, 0],
+      "is_mirrored": true
+    }
+  ]
+}
