@@ -227,6 +227,32 @@ class MovementController:
             )
             await self._servo.set_angle_async(channel, transformed)
 
+    async def move_single_joint(self, leg_index: int, joint_type: int, angle: float) -> None:
+        """Move a single joint (0=coxa, 1=femur, 2=tibia) for a given leg."""
+        if not self._servo:
+            raise HardwareNotAvailableError("No servo controller set.")
+
+        if leg_index < 0 or leg_index >= len(self._config.legs):
+            raise ValueError(f"Invalid leg_index: {leg_index}")
+
+        if joint_type not in (0, 1, 2):
+            raise ValueError(f"Invalid joint_type: {joint_type}")
+
+        leg_config = self._config.legs[leg_index]
+        channels = (leg_config.coxa, leg_config.femur, leg_config.tibia)
+        channel = channels[joint_type]
+        transformed = self._transform_angle(angle, leg_config, joint_type)
+
+        logger.info(
+            "movement.servo_command",
+            leg_index=leg_index,
+            joint=JOINT_NAMES[joint_type],
+            channel=channel,
+            address=self._resolve_servo_address(channel),
+            angle=transformed,
+        )
+        await self._servo.set_angle_async(channel, transformed)
+
     def _transform_coordinates(self, points: List[List[float]]) -> None:
         """Transform body-frame points to leg-local coordinates.
 
