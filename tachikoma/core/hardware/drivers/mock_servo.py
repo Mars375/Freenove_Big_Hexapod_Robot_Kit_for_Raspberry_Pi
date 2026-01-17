@@ -94,6 +94,10 @@ class MockServoController(IServoController):
             channel=channel,
             angle=angle
         )
+
+    async def set_angle_async(self, channel: int, angle: int) -> None:
+        """Async wrapper for set_angle."""
+        self.set_angle(channel, angle)
     
     def get_angle(self, channel: int) -> int:
         """Get current servo angle

@@ -36,7 +36,7 @@ async def main() -> None:
             angles = kinematics.calculate_ik(NEUTRAL_X, NEUTRAL_Y, z_down)
             if angles is None:
                 continue
-            movement.set_leg_angles(leg_index, *angles)
+            await movement.set_leg_angles(leg_index, *angles)
         await asyncio.sleep(0.02)
 
     await factory.cleanup_all()

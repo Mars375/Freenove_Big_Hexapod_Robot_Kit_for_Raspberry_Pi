@@ -182,7 +182,7 @@ class MovementController:
         adjusted = max(0.0, min(180.0, adjusted))
         return int(round(adjusted))
 
-    def set_leg_angles(self, leg_index: int, coxa: float, femur: float, tibia: float) -> None:
+    async def set_leg_angles(self, leg_index: int, coxa: float, femur: float, tibia: float) -> None:
         """Set angles for a single leg after applying offsets and mirroring."""
         if not self._servo:
             raise HardwareNotAvailableError("No servo controller set.")
@@ -196,7 +196,7 @@ class MovementController:
 
         for joint_index, (channel, angle) in enumerate(zip(channels, raw_angles)):
             transformed = self._transform_angle(angle, leg_config, joint_index)
-            self._servo.set_angle(channel, transformed)
+            await self._servo.set_angle_async(channel, transformed)
 
     def _transform_coordinates(self, points: List[List[float]]) -> None:
         """Transform body-frame points to leg-local coordinates.

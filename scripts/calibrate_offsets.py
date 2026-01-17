@@ -86,8 +86,8 @@ def _show_status(config: GlobalRobotConfig, leg_index: int, joint_index: int) ->
     )
 
 
-def _set_leg_neutral(movement: MovementController, leg_index: int) -> None:
-    movement.set_leg_angles(leg_index, 90, 90, 90)
+async def _set_leg_neutral(movement: MovementController, leg_index: int) -> None:
+    await movement.set_leg_angles(leg_index, 90, 90, 90)
 
 
 async def main() -> None:
@@ -115,7 +115,7 @@ async def main() -> None:
 
     print("Mirrored legs invert angles around 90° after applying offsets.")
     print("Use '+' / '-' to adjust by 1 deg, 's' to save, 'n' new selection, 'q' quit.")
-    _set_leg_neutral(movement, leg_index)
+    await _set_leg_neutral(movement, leg_index)
     _show_status(config, leg_index, joint_index)
 
     while True:
@@ -123,11 +123,11 @@ async def main() -> None:
 
         if key == "+":
             config.legs[leg_index].offsets[joint_index] += 1
-            _set_leg_neutral(movement, leg_index)
+            await _set_leg_neutral(movement, leg_index)
             _show_status(config, leg_index, joint_index)
         elif key == "-":
             config.legs[leg_index].offsets[joint_index] -= 1
-            _set_leg_neutral(movement, leg_index)
+            await _set_leg_neutral(movement, leg_index)
             _show_status(config, leg_index, joint_index)
         elif key == "s":
             _sync_offsets(config_data, config)
@@ -140,7 +140,7 @@ async def main() -> None:
             joint_index = _prompt_joint()
             if joint_index is None:
                 break
-            _set_leg_neutral(movement, leg_index)
+            await _set_leg_neutral(movement, leg_index)
             _show_status(config, leg_index, joint_index)
         elif key == "q":
             break

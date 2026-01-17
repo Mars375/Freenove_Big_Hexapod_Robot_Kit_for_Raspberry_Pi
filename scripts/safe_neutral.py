@@ -25,7 +25,7 @@ async def main() -> None:
     movement = MovementController(servo_controller=servo, config=config)
 
     for leg_index in range(len(config.legs)):
-        movement.set_leg_angles(leg_index, 90, 90, 90)
+        await movement.set_leg_angles(leg_index, 90, 90, 90)
         await asyncio.sleep(0.1)
 
     await factory.cleanup_all()
