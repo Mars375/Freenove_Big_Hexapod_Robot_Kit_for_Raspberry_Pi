@@ -75,6 +75,7 @@ def _sync_offsets(config_data: dict, config: GlobalRobotConfig) -> None:
         if not isinstance(config_data["legs"][leg_index], dict):
             config_data["legs"][leg_index] = {}
         config_data["legs"][leg_index]["offsets"] = offsets[:3]
+        config_data["legs"][leg_index]["is_mirrored"] = bool(leg.is_mirrored)
 
 
 def _show_status(config: GlobalRobotConfig, leg_index: int, joint_index: int) -> None:
@@ -114,7 +115,7 @@ async def main() -> None:
         return
 
     print("Mirrored legs invert angles around 90° after applying offsets.")
-    print("Use '+' / '-' to adjust by 1 deg, 's' to save, 'n' new selection, 'q' quit.")
+    print("Use '+' / '-' to adjust by 1 deg, 'm' toggle mirror, 's' save, 'n' new selection, 'q' quit.")
     await _set_leg_neutral(movement, leg_index)
     _show_status(config, leg_index, joint_index)
 
@@ -140,6 +141,10 @@ async def main() -> None:
             joint_index = _prompt_joint()
             if joint_index is None:
                 break
+            await _set_leg_neutral(movement, leg_index)
+            _show_status(config, leg_index, joint_index)
+        elif key == "m":
+            config.legs[leg_index].is_mirrored = not config.legs[leg_index].is_mirrored
             await _set_leg_neutral(movement, leg_index)
             _show_status(config, leg_index, joint_index)
         elif key == "q":

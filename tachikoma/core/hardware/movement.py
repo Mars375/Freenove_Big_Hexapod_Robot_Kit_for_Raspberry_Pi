@@ -30,6 +30,9 @@ logger = structlog.get_logger()
 
 
 
+# Joint names for logging/debugging
+JOINT_NAMES = ("coxa", "femur", "tibia")
+
 # Leg mounting angles (degrees from body X-axis)
 # These transform body-frame movements into leg-local coordinates
 LEG_ANGLES = [54, 0, -54, -126, 180, 126]
@@ -182,6 +185,24 @@ class MovementController:
         adjusted = max(0.0, min(180.0, adjusted))
         return int(round(adjusted))
 
+    def _resolve_servo_address(self, channel: int) -> str:
+        """Return the I2C address used for the given channel, when available."""
+        if not self._servo:
+            return "unknown"
+
+        pca_low = getattr(self._servo, "_pca_low", None)
+        pca_high = getattr(self._servo, "_pca_high", None)
+        if pca_low is not None and pca_high is not None:
+            target = pca_low if channel < 16 else pca_high
+            address = getattr(target, "_address", None)
+            if address is not None:
+                return f"0x{address:02x}"
+
+        if "mock" in self._servo.__class__.__name__.lower():
+            return "mock"
+
+        return "unknown"
+
     async def set_leg_angles(self, leg_index: int, coxa: float, femur: float, tibia: float) -> None:
         """Set angles for a single leg after applying offsets and mirroring."""
         if not self._servo:
@@ -196,6 +217,14 @@ class MovementController:
 
         for joint_index, (channel, angle) in enumerate(zip(channels, raw_angles)):
             transformed = self._transform_angle(angle, leg_config, joint_index)
+            logger.info(
+                "movement.servo_command",
+                leg_index=leg_index,
+                joint=JOINT_NAMES[joint_index],
+                channel=channel,
+                address=self._resolve_servo_address(channel),
+                angle=transformed,
+            )
             await self._servo.set_angle_async(channel, transformed)
 
     def _transform_coordinates(self, points: List[List[float]]) -> None:
